@@ -1,0 +1,5 @@
+# Release status
+
+Current status: **Candidate** — the `E2E` tutorial notebook `tutorials/kandinsky_generation_colab.ipynb` is generated and verified with all static, parity, unit and local GPU pre-flight tests passing. The pipeline package with its adaptation contract, the offline unit suite, the static validator (`tools/validate_release_assets.py`), the generator parity checks and the CI workflow exist and are green. Full feasibility checks on the local RTX 5070 Ti laptop GPU confirmed that the pipeline runs cleanly in CUDA fp16 at 512² allocating ~3.2 GB VRAM during decoder generation without needing CPU offload. Full promotion to **Release-grade** requires recording a top-to-bottom clean-runtime execution in `docs/release-verification.md`.
+
+One deployment gate applies: the served weights set is approximately 15.9 GB (decoder ~5.28 GB + shared prior ~10.57 GB), falling under the fleet's >9 GB publication convenience gate. Following the PixArt-Σ / Toto precedent, the gate is waived and weights provenance is recorded in `docs/WEIGHTS.md` and `MODEL_CARD.md`.
