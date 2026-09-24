@@ -34,7 +34,7 @@ This pipeline provides a ready-to-run interactive Google Colab notebook that exe
 
 #### Description
 
-`kandinsky-community/kandinsky-2-2-decoder` at revision `9ae140d347fed8ce6e8bb3005dcc1f48543bb8e3` is the diffusion decoder member of the Kandinsky 2.2 latent diffusion model family (Shakhmatov et al., 2023), developed by ai-forever. It uses a 1.25 B-parameter conditional UNet architecture (`UNet2DConditionModel` with 1,224,965,124 parameters) conditioned on text-aligned CLIP image embeddings (CLIP ViT-G/14) and timesteps, operating on latents produced and decoded by a learned MoVQ autoencoder (67 M parameters). The packaged safetensors weights consist of `unet/diffusion_pytorch_model.safetensors` (5,012,319,952 bytes) and `movq/diffusion_pytorch_model.safetensors` (271,380,364 bytes).
+`kandinsky-community/kandinsky-2-2-decoder` at revision `9ae140d347fed8ce6e8bb3005dcc1f48543bb8e3` is the diffusion decoder member of the Kandinsky 2.2 latent diffusion model family (Shakhmatov et al., 2023), developed by ai-forever. It uses a 1.25 B-parameter conditional UNet architecture (`UNet2DConditionModel` with 1,253,057,288 parameters) conditioned on text-aligned CLIP image embeddings (CLIP ViT-G/14) and timesteps, operating on latents produced and decoded by a learned MoVQ autoencoder (67 M parameters). The packaged safetensors weights consist of `unet/diffusion_pytorch_model.safetensors` (5,012,309,584 bytes) and `movq/diffusion_pytorch_model.safetensors` (271,380,364 bytes).
 
 What this repository adds is the `KandinskyPipeline` class in `src/kandinsky_generation_pipeline/pipeline.py`: manifest verification of the three Hub snapshots before any model library is imported, staging at pinned revisions, UNet construction from `diffusers` with a rank-8 LoRA injected by `peft` on attention projections (`to_q`, `to_k`, `to_v`, `to_out.0` — 176 tensors, 1,646,592 parameters), lazy loading and release of the prior pipeline with a prompt cache that outlives it, seeded generation through `KandinskyV22Pipeline`, held-out denoising-MSE evaluation at fixed timesteps, bounded LoRA fine-tuning with validation-loss epoch selection, and a safetensors adapter artifact that is digest-verified before deserialization.
 
@@ -117,8 +117,8 @@ The model must not be used to create non-consensual sexual content, depictions o
 - Model: `kandinsky-community/kandinsky-2-2-decoder`
 - Revision: `9ae140d347fed8ce6e8bb3005dcc1f48543bb8e3`
 - Manifest: `weights/kandinsky-2-2-decoder/dimer-base-manifest.json`, format `dimer_hf_snapshot` v1, 7 files, `totalBytes` 5283700183
-- UNet `unet/diffusion_pytorch_model.safetensors` (5,012,319,952 bytes) SHA-256: `9fae7efc90066b5394be5f483c65cbeeaef178a9c39c898c697845fca9b19dfb`; 1,224,965,124 parameters, float16/float32
-- MoVQ `movq/diffusion_pytorch_model.safetensors` (271,380,364 bytes) SHA-256: `43a586071efc566fbceccaa3f888362629b311da70ff8ec19bebe5c48b2ddb6e`; 67 M parameters
+- UNet `unet/diffusion_pytorch_model.safetensors` (5,012,309,584 bytes) SHA-256: `3cc2f07442b9de0f18fb3f22247790872c094c4acc9dbe68552f96fd2e5c1ea1`; 1,253,057,288 parameters, float16/float32
+- MoVQ `movq/diffusion_pytorch_model.safetensors` (271,380,364 bytes) SHA-256: `43a5860fea195a7116f2471396c5cc9535fade9b63c4857d8a192ffd924b7002`; 67 M parameters
 - Prior: `kandinsky-community/kandinsky-2-2-prior` at `9fc51ad5732afc5d031724219d22e6c42179c5a8`; manifest `weights/kandinsky-2-2-prior/dimer-base-manifest.json`, 14 files, `totalBytes` 10574964619
 - Scorer (evaluation only): `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` at `1a25a446712ba5ee05982a381eed697ef9b435cf`; manifest `weights/clip-vit-b-32-laion2b/dimer-base-manifest.json`, 9 files, `totalBytes` 608782299
 - Upstream references: https://huggingface.co/kandinsky-community/kandinsky-2-2-decoder · https://huggingface.co/kandinsky-community/kandinsky-2-2-prior · https://github.com/ai-forever/kandinsky-2
