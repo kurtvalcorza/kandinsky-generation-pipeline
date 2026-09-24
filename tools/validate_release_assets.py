@@ -322,6 +322,36 @@ def validate_identity_consistency() -> None:
         _check(not stray, f"{name} cites an unexpected 40-hex revision: {stray}")
 
 
+WEIGHT_DOCS = ("README.md", "MODEL_CARD.md", "docs/WEIGHTS.md")
+_DIGEST = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{64}(?![0-9a-fA-F])")
+_BYTE_COUNT = re.compile(r"(?<![\d,])(\d{1,3}(?:,\d{3})+|\d+)\s*bytes\b|totalBytes`?\s*(\d+)")
+
+
+def _manifest_facts(root: Path = ROOT) -> tuple[set[str], set[int]]:
+    digests: set[str] = set()
+    sizes: set[int] = set()
+    for path in sorted(root.glob("weights/*/dimer-base-manifest.json")):
+        manifest = json.loads(_read(path))
+        sizes.add(manifest["totalBytes"])
+        for entry in manifest["files"]:
+            digests.add(entry["sha256"])
+            sizes.add(entry["bytes"])
+    return digests, sizes
+
+
+def validate_weight_facts(root: Path = ROOT) -> None:
+    """Every SHA-256 and byte count quoted in the weight prose must come from a committed manifest."""
+    digests, sizes = _manifest_facts(root)
+    _check(bool(digests), "no weights/*/dimer-base-manifest.json found to check weight facts against")
+    for name in WEIGHT_DOCS:
+        text = _read(root / name)
+        bad_digests = sorted({d for d in _DIGEST.findall(text) if d not in digests})
+        _check(not bad_digests, f"{name} cites SHA-256 digests absent from every manifest: {bad_digests}")
+        quoted = {int((m.group(1) or m.group(2)).replace(",", "")) for m in _BYTE_COUNT.finditer(text)}
+        bad_sizes = sorted(quoted - sizes)
+        _check(not bad_sizes, f"{name} cites byte counts absent from every manifest: {bad_sizes}")
+
+
 def validate_release_status() -> None:
     status = _read(ROOT / "STATUS.md")
     match = re.search(r"Current status: \*\*(Candidate|Release-grade)\b", status)
@@ -549,9 +579,10 @@ def validate_notebooks() -> None:
 def validate_all() -> list[str]:
     validate_model_card()
     validate_identity_consistency()
+    validate_weight_facts()
     validate_release_status()
     validate_notebooks()
-    return ["model-card", "identity-consistency", "release-status", "notebook+parity"]
+    return ["model-card", "identity-consistency", "weight-facts", "release-status", "notebook+parity"]
 
 
 def main() -> int:
