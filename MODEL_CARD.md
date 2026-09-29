@@ -24,7 +24,7 @@ date_published_source: "Hugging Face Hub commit `9ae140d347fed8ce6e8bb3005dcc1f4
 
 ## Interactive Colab Tutorials
 
-This pipeline provides a ready-to-run interactive Google Colab notebook that exercises the repository's public API end to end:
+This pipeline provides a ready-to-run, self-contained Google Colab notebook. It carries the repository's code in its own cells and runs end to end without cloning the repository:
 
 - **End-to-End Text-to-Image Fine-Tuning Tutorial**:  
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/kandinsky-generation-pipeline/blob/main/tutorials/kandinsky_generation_colab.ipynb) [`kandinsky_generation_colab.ipynb`](https://github.com/kurtvalcorza/kandinsky-generation-pipeline/blob/main/tutorials/kandinsky_generation_colab.ipynb)  
@@ -34,83 +34,172 @@ This pipeline provides a ready-to-run interactive Google Colab notebook that exe
 
 #### Description
 
-`kandinsky-community/kandinsky-2-2-decoder` at revision `9ae140d347fed8ce6e8bb3005dcc1f48543bb8e3` is the diffusion decoder member of the Kandinsky 2.2 latent diffusion model family (Shakhmatov et al., 2023), developed by ai-forever. It uses a 1.25 B-parameter conditional UNet architecture (`UNet2DConditionModel` with 1,253,057,288 parameters) conditioned on text-aligned CLIP image embeddings (CLIP ViT-G/14) and timesteps, operating on latents produced and decoded by a learned MoVQ autoencoder (67 M parameters). The packaged safetensors weights consist of `unet/diffusion_pytorch_model.safetensors` (5,012,309,584 bytes) and `movq/diffusion_pytorch_model.safetensors` (271,380,364 bytes).
+`kandinsky-community/kandinsky-2-2-decoder` at revision `9ae140d347fed8ce6e8bb3005dcc1f48543bb8e3` is the diffusion decoder of Kandinsky 2.2, a latent diffusion text-to-image model from ai-forever (Shakhmatov et al., 2023). Generation runs in two stages. First, the separately pinned prior `kandinsky-community/kandinsky-2-2-prior` maps a text prompt to a CLIP ViT-G/14 image embedding. Second, the decoder's conditional UNet (`UNet2DConditionModel`, 1,253,057,288 parameters) removes noise from a 64 × 64 × 4 latent over a fixed number of scheduler steps, conditioned on that embedding. A MoVQ autoencoder (67,832,495 parameters) decodes the final latent to a 512 × 512 RGB image.
 
-What this repository adds is the `KandinskyPipeline` class in `src/kandinsky_generation_pipeline/pipeline.py`: manifest verification of the three Hub snapshots before any model library is imported, staging at pinned revisions, UNet construction from `diffusers` with a rank-8 LoRA injected by `peft` on attention projections (`to_q`, `to_k`, `to_v`, `to_out.0` — 176 tensors, 1,646,592 parameters), lazy loading and release of the prior pipeline with a prompt cache that outlives it, seeded generation through `KandinskyV22Pipeline`, held-out denoising-MSE evaluation at fixed timesteps, bounded LoRA fine-tuning with validation-loss epoch selection, and a safetensors adapter artifact that is digest-verified before deserialization.
+The upstream weights do not change at inference time. Adaptation in this repository is gradient training of a rank-8 LoRA adapter (`peft`) on the UNet attention projections `to_q`, `to_k`, `to_v` and `to_out.0`: 176 tensors, 1,646,592 trainable parameters. The prior, the MoVQ and the base UNet weights stay frozen.
+
+This repository adds the `KandinskyPipeline` class in `src/kandinsky_generation_pipeline/pipeline.py`, the captioned-image contract in `samples.py`, and the CLIP-based scoring in `metrics.py`. When a reader runs this code, it does the following:
+
+- verifies three Hub snapshots against committed manifests before any model library is imported;
+- encodes prompts through the prior, then releases the prior;
+- generates seeded images;
+- evaluates held-out denoising MSE;
+- fine-tunes the LoRA adapter with validation-loss epoch selection;
+- writes a safetensors adapter artifact whose digest is checked before it is loaded again.
 
 #### Intended Use and Limitations
 
+The pipeline is a teaching and research reference for adapting a latent diffusion generator to a small captioned image set.
+
 ###### Primary Intended Uses
 
-Two tasks are exposed. **Text-to-image generation:** input is text prompts (1..1,000 characters), seed, step count (1..100) and guidance scale (1..20); output is 512 × 512 RGB images decoded by MoVQ. **Adaptation to captioned images:** given `{id, image, caption}` records, the pipeline fine-tunes the LoRA on the noise-prediction objective and exports the adapter as a portable safetensors artifact.
+The pipeline exposes two tasks:
+
+- **Text-to-image generation.** The input is one or more text prompts (1..1,000 characters each), a seed, a step count (1..100, default `20`) and a guidance scale (1..20, default `4.0`). The output is one 512 × 512 RGB image per prompt and seed, plus generation metadata.
+- **Adaptation to captioned images.** The input is a list of `{id, image, caption}` records (4..2,000 records). The output is a LoRA adapter trained on the noise-prediction objective, written as `adapter.safetensors` with a `manifest.json`.
+
+The application domains envisioned during development are these:
+
+- teaching how parameter-efficient fine-tuning changes a diffusion model;
+- research on the style or subject adaptation of a text-to-image generator to a narrow, captioned photo collection, such as a set of species photographs;
+- producing illustrative synthetic images for such research.
+
+The design role is a reference implementation that a reader's own training or generation code can embed or copy. It is not a production image service.
 
 ###### Primary Intended Users
 
-Intended users are machine-learning engineers and researchers who work with latent diffusion models and parameter-efficient fine-tuning (PEFT), in research, teaching or the DIMER model workbench.
+The intended users are machine-learning engineers, researchers and students who work with diffusion models and parameter-efficient fine-tuning. The envisioned settings are research, teaching and self-hosted experimentation on a GPU the user controls.
+
+The pipeline assumes the following user competencies:
+
+- how diffusion sampling and classifier-free guidance affect an image;
+- that a lower denoising loss does not imply better-looking images;
+- that CLIP similarity is an automated proxy and not a human judgement;
+- how to check the licence and consent status of the images they train on.
+
+The pipeline enforces only structural limits on records and prompts. It cannot judge whether an image or caption is appropriate, so it is not robust to careless or adversarial inputs.
 
 ###### Out-of-scope use cases
 
-1. **Capability boundary:** the pipeline generates 512 × 512 images from text and fine-tunes a LoRA on the decoder UNet. It does not perform inpainting (which uses `kandinsky-inpainting-pipeline`) or ControlNet depth conditioning (which uses `kandinsky-controlnet-depth-pipeline`).
-2. **Input boundary:** records are RGB images with sides within 256..4,096 px and captions of 1..1,000 characters.
-3. **Decision boundary:** not for producing images presented as photographs of real events or identifiable people, or for any downstream decision that treats a generated image as factual evidence.
-4. **Provenance boundary:** not for unverified execution environments; snapshots must match committed manifests.
+1. **Capability boundary:** the pipeline generates 512 × 512 images from text and fine-tunes a LoRA on the decoder UNet. It does not perform inpainting or depth-conditioned generation, and it does not generate at other resolutions. Masked editing and depth-conditioned generation belong to separate Kandinsky 2.2 inpainting and ControlNet-depth pipelines, which are still under development.
+2. **Input boundary:** training records must be images whose sides are within 256..4,096 px, with captions of 1..1,000 characters. A dataset must have 4..2,000 records, and record ids must be unique strings of at most 64 characters. Each image is resized so its shorter side is 512 px and centre-cropped to 512 × 512, so content outside the central square is not learned. Prompts are refused outside 1..1,000 characters, steps outside 1..100 and guidance outside 1..20.
+3. **Data-size boundary:** the adaptation is designed for tens to hundreds of images and at most 50 epochs. It is not a full fine-tuning recipe, and it is not tested on thousands of images.
+4. **Decision boundary:** not for producing images presented as photographs of real events or identifiable people. Not for any decision that treats a generated image as factual evidence, such as news, legal, insurance or scientific evidence.
+5. **Provenance boundary:** not for use with weights that do not match the committed manifests. The loader refuses a mismatch rather than loading it.
+
+---
 
 #### Factors
 
+The pipeline's behaviour varies with the subject named in the prompt, the photographs used for adaptation, and the hardware it runs on.
+
 ###### Groups
 
-The model generates depictions of subjects named in prompts. The upstream model was trained on diverse web image-text pairs; this repository's sample prompts focus on bird species and measure no demographic attributes. Deployments depicting people must perform domain-specific evaluation for fairness and representation.
+The pipeline is not human-centric by design. The bundled sample contains photographs of six North American bird species, and the evaluation measures no demographic attribute. The model can still depict people when a prompt asks for them. The upstream training corpus is web image–text data that the upstream authors did not audit or document by demographic group. It is unknown how people of different ages, genders, skin tones or cultures are represented in it.
+
+This repository therefore makes no group-level fairness claim. An operator who generates or adapts images depicting people takes on that audit. The operator should compare generated depictions across the groups relevant to their use, for example by fixed prompts that vary only the described group, before relying on the output.
 
 ###### Instrumentation
 
-Training photographs came from diverse internet sources with automated and human-curated captions. Sample images are research-grade iNaturalist bird photographs. The evaluation instrument is `laion/CLIP-ViT-B-32-laion2B-s34B-b79K`.
+The upstream model was trained on image–text pairs collected from the web, captured by unknown cameras and captioned by their publishers or by automated tools. The upstream authors do not document the capture instruments. The tutorial sample consists of 60 research-grade iNaturalist photographs. They were taken by volunteer observers, typically with consumer cameras and phones, and vary in resolution, focus and lighting.
+
+The pipeline sees only decoded RGB pixels after a resize and centre crop. It cannot detect instrument defects such as blur, compression artefacts, watermarks or colour casts. An adapter trained on photographs with such defects learns to reproduce them. Captions are also an instrument: the sample captions come from one fixed template per species, so they carry no description of pose, background or lighting.
 
 ###### Environment
 
-Operating environment: Python 3.12 with `torch==2.14.0`, `diffusers==0.40.0`, `transformers==5.17.0`, `peft==0.21.0`, `accelerate==1.15.0`, `safetensors==0.8.0`, `huggingface-hub==1.32.0`, `numpy==2.5.3`, `pillow==11.3.0`. The UNet runs in float16 on CUDA with LoRA in float32 under autocast; MoVQ runs in float16. A GPU of at least 12 GB VRAM is recommended.
+**Operating environment.** Python 3.12 with the pinned packages `torch==2.14.0`, `diffusers==0.40.0`, `transformers==5.17.0`, `peft==0.21.0`, `accelerate==1.15.0`, `safetensors==0.8.0`, `huggingface-hub==1.32.0`, `numpy==2.5.3` and `pillow==11.3.0`. The UNet, prior and MoVQ run in float16 on CUDA. The LoRA parameters are kept in float32, and training uses float16 autocast. The tutorial requires a CUDA GPU with at least 15 GB of memory, such as a 16 GB T4, and about 25 GB of free disk for the 16.5 GB of pinned weights. On CPU the code runs in float32 but is impractically slow for the tutorial.
+
+**Data environment.** Adaptation assumes that the photographs the adapter is trained on resemble the images the user later wants to generate: the same kind of subject, framing and photographic style. The captions used at generation time should follow the same pattern as the training captions. Prompts that fall outside the adapted subject revert towards the base model's behaviour. Held-out denoising loss is meaningful only when the validation photographs come from the same distribution as the training photographs.
+
+---
 
 #### Metrics
 
+The metrics are chosen because generation has no ground truth. Each metric measures one property of the model, and none of them measures image quality as a person would judge it.
+
 ###### Performance Measures
 
-The pipeline reports three metric types:
-1. **Held-out denoising MSE** (`evaluate`): Mean squared error of UNet noise predictions against ground-truth Gaussian noise added to MoVQ latents at timesteps 100, 300, 500, 700, 900.
-2. **CLIP scores of generated images** (`score_generations`): `clip_prompt_similarity`, `label_accuracy` (nearest caption argmax), and `reference_similarity` to held-out real images.
-3. **The real-photo ceiling** (`real_photo_baseline`): The same three CLIP scores evaluated directly on the held-out real photographs.
+The code reports these measures. Names are given as the code reports them.
+
+1. **`denoising_mse`** from `evaluate`: the mean squared error between the UNet's noise prediction and the true Gaussian noise added to MoVQ latents of held-out photographs, at timesteps `100`, `300`, `500`, `700` and `900`, with a per-timestep breakdown. It is the training objective measured on photographs the adapter never trained on, and it is the only measure that compares the frozen and the adapted model on identical inputs.
+2. **`clip_prompt_similarity`** from `score_generations`: the mean cosine similarity × 100 between each generated image and its prompt, embedded by the pinned CLIP ViT-B/32 scorer. It captures prompt alignment.
+3. **`label_accuracy`** from `score_generations`: the fraction of generated images whose nearest caption, among the dataset's distinct captions, is the caption they were generated from. It captures whether a generated image is recognisable as its intended subject.
+4. **`reference_similarity`** from `score_generations`: the mean cosine similarity × 100 between each generated image and the mean CLIP embedding of held-out real photographs with the same caption. It captures closeness to the target photographs.
+5. **`real_photo_baseline`**: the same three CLIP measures computed on the held-out real photographs. This is the ceiling that a generator trained to imitate those photographs can approach.
+
+The measures are complementary. The denoising loss is sensitive to the adaptation but does not show what images look like. The CLIP measures describe generated images but depend on one automated scorer and on the prompt wording. Reading only the loss would miss a model that fits noise better but generates worse images. Reading only CLIP similarity would reward images that match the text but not the photographs. No FID or human preference score is computed. The 12 held-out images are far too few for FID.
 
 ###### Decision thresholds
 
-The generator sets no arbitrary decision threshold; the only automated rule is the CLIP `label_accuracy` nearest-caption argmax. Epoch selection chooses the checkpoint with minimal validation denoising MSE.
+The pipeline applies two implicit decision rules:
+
+- `label_accuracy` uses an `argmax` over the CLIP cosine similarities to the distinct captions, with no minimum similarity.
+- Adaptation keeps the epoch with the lowest validation `denoising_mse`, including epoch 0, the frozen model. The kept adapter can therefore never have a higher validation loss than the frozen model.
+
+No acceptance threshold on any measure was set during development, and no quality threshold is shipped. A similarity score or loss value from this pipeline cannot, on its own, decide whether an image is fit for use. The operator who deploys generated images owns any acceptance rule. A false accept, where an unsuitable or misleading image is published, usually costs more than a false reject, where a usable image is discarded. The operator should therefore combine automated scores with human review, and set any threshold on their own validation images.
 
 ###### Approaches to uncertainty and variability
 
-All generation, noise, and latent operations use seeded random generators for reproducible evaluation. Autocast and GPU attention kernel nondeterminism can produce minor variations in low-order decimals.
+Every reported number comes from a single run on one seeded split of the tutorial sample: 36 training, 12 validation and 12 test photographs, 6, 2 and 2 per species with seed `42`. No repeated runs, cross-validation or bootstrap are performed, and no standard deviation or confidence interval is reported. Differences between the frozen and the adapted model are one observation on 12 photographs and 12 generated images, not an estimate of a population effect.
+
+Seeds control the prompt encoding, the data split, the evaluation noise and latents (derived from the evaluation `seed` and timestep), the training noise and ordering (`seed`), and each generated image (`seed + index`). The remaining sources of run-to-run variability are as follows:
+
+- **Non-deterministic GPU kernels and float16 autocast** can change low-order digits between runs on the same hardware, and more between different GPUs.
+- **Prompt encoding** seeds the prior's sampler with `prompt_seed(prompt)`, a 31-bit integer taken from the prompt's SHA-256. The same prompt therefore gets the same prior seed in every process. Its embedding is still subject to the GPU nondeterminism above.
+
+CLIP similarities are cosine similarities, not probabilities, and `label_accuracy` is not calibrated. A caller who needs a calibrated measure must label their own images and calibrate against them.
+
+---
 
 #### Ethical considerations and biases
 
+No external ethics board or group review has assessed this pipeline. The considerations below are the developers' own.
+
 ###### Data
 
-The upstream training set comprises large-scale public image datasets. This repository distributes code, manifests, and documentation only; no binary model weights or training images are stored in Git. Tutorial data uses 60 CC0 1.0 research-grade photographs from iNaturalist.
+The upstream Kandinsky 2.2 model was trained on large web-scale image–text datasets. The upstream authors describe these only at a high level and do not list their sources or filtering in the model repository. It is therefore not ruled out that the training data includes personal images, faces, copyrighted works or other sensitive material. Whether it does is unknown.
+
+This repository distributes code, snapshot manifests, configuration files and documentation. It does not distribute model weights in Git: they are fetched from the Hugging Face Hub at the pinned revisions. It also does not distribute training images. The tutorial downloads 60 CC0 1.0 photographs from the iNaturalist open-data bucket at run time, and the adapter it exports is trained only on those.
+
+The operator is responsible for the images and captions they supply for adaptation. The pipeline does not check them for faces, personal data, copyrighted content or confidential material. An adapter can memorise and reproduce its training images, so an adapter trained on restricted images must be treated as restricted too.
 
 ###### Human Life
 
-This pipeline is intended for research, pedagogical, and benchmarking applications; it is not designed or validated for life-critical, medical, diagnostic, legal, or high-stakes decisions.
+The pipeline is not intended for decisions in health, safety, criminal justice, employment, credit, housing or any other domain central to human life. It produces synthetic images, and no generated image should be treated as a record of a real person, place or event. Nobody has validated it for any such domain. Its only checks are structural tests and a tutorial run on bird photographs.
+
+Foreseeable misuse in a sensitive domain includes generating images that could be mistaken for medical, forensic or news imagery. Such use would require, at minimum, human review of every image, disclosure that the image is synthetic, and validation by the responsible domain authority. This repository provides none of these.
 
 ###### Mitigations
 
-1. **Supply-chain integrity:** `MODEL_ID`, `PRIOR_ID`, and `SCORER_ID` are pinned to immutable 40-hex commit hashes. Manifests enforce exact byte count and SHA-256 validation before loading.
-2. **Safetensors only, no remote code:** All weight files use safetensors; no pickle files are deserialized and `trust_remote_code=True` is prohibited.
-3. **Prior lifecycle management:** The prior is released before training to free VRAM.
-4. **Input validation:** Pre-execution checks enforce dimensions, formats, and dataset constraints.
+1. **Supply-chain integrity:** `MODEL_REVISION`, `PRIOR_REVISION` and `SCORER_REVISION` are immutable 40-character commit hashes. Each snapshot is checked against its committed `dimer-base-manifest.json`, and every file's byte count and SHA-256 must match before loading. Staging refuses a manifest that names a different model or revision, and downloads only at the pinned revision.
+2. **No executable serialization:** every weight file is safetensors, and the snapshot check rejects file types outside the manifest's code-free set. No pickle is deserialized, and no Hub-hosted code runs: the model classes come from `diffusers`, `transformers` and `peft`.
+3. **Adapter integrity:** `load_adapter` refuses an artifact whose `format` is not `org.valcorza.kandinsky-generation.adapter.v1`, whose recorded base model is not the pinned decoder revision, or whose `adapter.safetensors` SHA-256 differs from its manifest.
+4. **Input integrity:** `validate_dataset` rejects datasets outside 4..2,000 records, duplicate ids, missing fields, image sides outside 256..4,096 px and captions outside 1..1,000 characters, before any model runs. `generate` rejects out-of-range steps and guidance.
+5. **Bounded adaptation:** `adapt` refuses more than 50 epochs or a learning rate above `1e-2`, and keeps the epoch with the lowest validation loss, so an adaptation that makes the model worse on held-out data is not exported.
+6. **Reproducibility:** the split, the training and evaluation noise, and each generated image are seeded. Runtime packages are pinned exactly in `pyproject.toml` and in the notebook. The exported manifest records the base model identity and adapter configuration. Prompt encoding is seeded from a SHA-256 of the prompt, so it does not depend on Python's per-process hash salt.
+
+The pipeline has no content filter or safety checker on prompts or generated images, and it adds no watermark or provenance metadata to generated images.
 
 ###### Risks and harms
 
-1. **Synthetic imagery:** The model can generate realistic synthetic images; users must label synthetic media responsibly.
-2. **Bias reproduction:** Web-trained models may reflect biases present in their pre-training distributions.
+1. **Misleading synthetic imagery.** The model produces photorealistic images of things that did not happen. Third parties who see an image without disclosure bear the harm, and the operator bears the reputational harm. The risk is realised whenever generated images are shared without a synthetic label, and it is likely under normal use because this pipeline adds no watermark. The magnitude ranges from minor confusion to serious harm when an image is used as evidence.
+2. **Harmful or non-consensual content.** No content filter runs, so a prompt can produce violent, sexual or defamatory depictions, including of real people. The people depicted bear the harm. Its likelihood depends on who can submit prompts, and its magnitude can be severe.
+3. **Bias amplification.** Web-trained generators reproduce stereotypes in how they depict people, occupations and cultures, and an adapter trained on a skewed set of images narrows the output further. The groups depicted and the viewers bear the harm. It is likely whenever people are generated without the audit described under *Groups*.
+4. **Training-data leakage.** A LoRA trained on a few images can reproduce them closely. If those images are private or copyrighted, the adapter and its outputs can leak them. The data subjects and rights holders bear the harm, and it is likely with small datasets and many epochs.
+5. **Automation bias.** Users may read a rising CLIP score or a falling denoising loss as proof of better images. The operator then accepts worse outputs, which the downstream audience bears. It is likely when scores are reported without human review.
+6. **Out-of-distribution degradation.** Prompts far from the adapted subject produce images of unknown quality with no warning. The operator bears the harm.
 
 ###### Use cases
 
-The model must not be used to create non-consensual sexual content, depictions of real people presented as factual, hate speech, or harassment. Use must comply with the upstream Apache-2.0 license.
+The following uses are unacceptable even where the pipeline would work:
+
+1. creating sexual or intimate imagery of real people, or any sexual imagery of minors;
+2. creating images of real people or events presented as authentic, including disinformation, fabricated evidence and impersonation;
+3. generating harassment, hate imagery or material intended to intimidate or demean a person or group;
+4. surveillance, biometric identification or demographic profiling, and training adapters on photographs of people collected without their consent;
+5. producing images used to discriminate in employment, housing, credit, insurance, education or healthcare access;
+6. deceptive, manipulative or fraudulent applications, such as fake product photographs or fake identity documents;
+7. any use that violates the upstream Apache-2.0 licence, the rights attached to the training images, or applicable law.
 
 ## Immutable provenance
 
@@ -132,25 +221,46 @@ The model must not be used to create non-consensual sexual content, depictions o
 - `adapt(train, val=None, *, epochs=4, lr=1e-4, batch_size=1, seed=0) -> dict`: bounded AdamW LoRA fine-tuning.
 - `save_artifact(output_dir, metadata=None) -> Path`: writes `adapter.safetensors` (176 LoRA tensors) + `manifest.json`.
 
-## DIMER deployment notes
+## Deployment notes
 
 | Field | Status |
 |---|---|
-| **DIMER status** | Planned / Tier D GEN row |
 | Licence | Apache-2.0 for decoder and prior; MIT for scorer; code Apache-2.0 |
-| Weights | 15.9 GB total (>9 GB publication gate waived per PixArt-Σ / Toto precedent) |
-| Remote code | Not required — standard diffusers and transformers classes |
-| Executable serialization | None — safetensors only |
-| Runtime | PyTorch 2.14+, diffusers, transformers, peft; fp16 on CUDA |
+| Weights | About 15.9 GB served (5.28 GB decoder and 10.57 GB prior), plus the 0.6 GB evaluation scorer |
+| Remote code | Not required: standard `diffusers` and `transformers` classes |
+| Executable serialization | None: safetensors only |
+| Runtime | PyTorch 2.14, `diffusers`, `transformers`, `peft`; float16 on CUDA |
 
-## Runtime
+## Verification records
 
-- Local feasibility gate executed 2026-09-24 on NVIDIA GeForce RTX 5070 Ti Laptop GPU (12.2 GB usable VRAM in WSL):
-  - UNet inference: 20 steps @ 512² in 14.70 s wall time.
-  - Peak VRAM allocated: 3,224.4 MB (reserved: 3,904.0 MB).
-  - CPU offload needed: False.
-- Unit test suite: 34 tests passing in 10.36 s offline.
-- Notebook specification: DIMER Notebook Specification 2.0 (§4 standalone carrier).
+`docs/release-verification.md` holds the procedure and every record. The clean-runtime run of the tutorial notebook:
+
+- **Date:** 2026-09-29
+- **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `b674640`, blob `34711f6de24f` (full identifiers in `docs/release-verification.md`)
+- **Runtime:** Kaggle batch kernel on a Tesla T4 (15,360 MiB), Python 3.12.13, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0`
+- **Procedure:** the notebook was fetched at that commit and run with `Run all` in a fresh interpreter, with an empty Hugging Face cache and no repository checkout, once with the form fields at their defaults. The install cell's restart guard fired once because the kernel had preloaded older `numpy` and `protobuf`, and the kernel was restarted and run again from the top.
+- **Observed result:** 12 of 12 code cells ran without error in 906.8 s. Held-out test `denoising_mse` was 0.077038 for the frozen model and 0.076142 after adaptation. `label_accuracy` was 0.8333 for both, against 0.9167 for the real photographs. `reference_similarity` rose from 68.910 to 69.087, against 88.660 for the real photographs. The reloaded adapter reproduced the in-memory results exactly: `denoising_mse_diff` 0.0 and `mean_abs_pixel_diff` 0.0.
+- **Caveats:** one run on one seeded split with 12 held-out photographs and 12 generated images. This is sample-sanity evidence, not a benchmark.
+
+The BYOD branch was run at the same commit:
+
+- **Date:** 2026-09-29
+- **Subject:** the same notebook and commit, with `USE_BYOD = True` and `BYOD_PATH` set in the executed copy only
+- **Runtime:** as above
+- **Procedure:** a zip of 12 CC0 research-grade iNaturalist photographs (6 Northern Cardinal, 6 Blue Jay) with a `captions.csv` was built inside the kernel, each photograph checked against a pinned SHA-256. After `Run all`, the committed Section 4 source was re-run against two incompatible zips.
+- **Observed result:** 13 of 13 code cells ran without error in 688.7 s. The 12 records were split 8 / 2 / 2 by caption and passed through fine-tuning, evaluation, export and an exact reload. A `captions.csv` without its `caption` column and a 200 × 200 image were each refused with a message naming the failed rule, before any model ran on them.
+- **Caveats:** with one test photograph per caption, these numbers show that the BYOD path runs, not how well the model adapts to such data.
+
+An earlier pre-flight observation of the generator, not the notebook:
+
+- **Date:** 2026-09-24
+- **Subject:** the `KandinskyPipeline` generation path in `src/kandinsky_generation_pipeline/pipeline.py`, before the weight-facts corrections in commit `ec6d560`
+- **Runtime:** NVIDIA GeForce RTX 5070 Ti Laptop GPU (12.2 GB usable), CPython 3.12.3, the pinned `torch`, `diffusers` and `transformers` versions
+- **Procedure:** staged and verified the decoder and prior; generated one 512 × 512 image with 20 steps and guidance `4.0`
+- **Observed result:** 14.70 s wall time for the 20 steps; peak allocated GPU memory 3,224.4 MB (3,904.0 MB reserved); no CPU offload needed
+- **Caveats:** one generation on one workstation with weights pre-staged; not a run of the tutorial notebook, not training, and not a clean runtime
+
+The offline unit tests and `tools/validate_release_assets.py` are static and unit checks, not executions of the notebook. The tutorial follows DIMER Notebook Specification 2.2 as a standalone notebook.
 
 ## References
 

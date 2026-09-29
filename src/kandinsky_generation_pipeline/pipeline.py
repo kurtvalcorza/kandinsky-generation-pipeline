@@ -102,6 +102,14 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def prompt_seed(prompt: str) -> int:
+    """Seed for the prior's sampler: the first 4 bytes of SHA-256(prompt), masked to 31 bits.
+
+    Stable across processes, unlike ``hash(prompt)``, which Python salts per interpreter.
+    """
+    return int.from_bytes(hashlib.sha256(prompt.encode("utf-8")).digest()[:4], "big") & 0x7FFFFFFF
+
+
 def _verify_manifest(root: Path, model_id: str, revision: str) -> dict[str, Any]:
     manifest_path = root / MANIFEST_NAME
     if not manifest_path.is_file():
@@ -515,7 +523,7 @@ class KandinskyPipeline:
         started = time.perf_counter()
         with torch.inference_mode():
             for prompt in wanted:
-                gen = torch.Generator(device=p_device).manual_seed(hash(prompt) % (2**31))
+                gen = torch.Generator(device=p_device).manual_seed(prompt_seed(prompt))
                 out = self._prior(
                     prompt=prompt if prompt else "",
                     num_inference_steps=num_inference_steps,
