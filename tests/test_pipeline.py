@@ -22,6 +22,7 @@ from kandinsky_generation_pipeline import (
     SCORER_REVISION,
     dataset_digest,
     preprocess_image,
+    prompt_seed,
     stage_missing_files,
     validate_dataset,
     validate_prompts,
@@ -180,6 +181,28 @@ def test_validate_prompts_enforces_strings_and_length(forbid_model_imports):
         validate_prompts([])
     with pytest.raises(ValueError, match="non-empty string"):
         validate_prompts([""])
+
+
+def test_prompt_seed_is_stable_across_processes(forbid_model_imports):
+    """The prior's sampler seed must not depend on Python's per-process string-hash salt."""
+    import subprocess
+    import sys
+
+    prompts = ["a photo of a blue jay", "", "étude"]
+    expected = [prompt_seed(p) for p in prompts]
+    assert all(0 <= s < 2**31 for s in expected)
+    assert expected[0] == int.from_bytes(hashlib.sha256(prompts[0].encode("utf-8")).digest()[:4], "big") & 0x7FFFFFFF
+    code = (
+        "import json, sys; from kandinsky_generation_pipeline import prompt_seed; "
+        "print(json.dumps([prompt_seed(p) for p in json.loads(sys.argv[1])]))"
+    )
+    for hash_seed in ("1", "2"):
+        out = subprocess.run(
+            [sys.executable, "-c", code, json.dumps(prompts)],
+            env={**__import__("os").environ, "PYTHONHASHSEED": hash_seed},
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert json.loads(out) == expected
 
 
 def test_preprocess_image_crops_and_scales(forbid_model_imports):

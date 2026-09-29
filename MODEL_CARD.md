@@ -142,10 +142,10 @@ No acceptance threshold on any measure was set during development, and no qualit
 
 Every reported number comes from a single run on one seeded split of the tutorial sample: 36 training, 12 validation and 12 test photographs, 6, 2 and 2 per species with seed `42`. No repeated runs, cross-validation or bootstrap are performed, and no standard deviation or confidence interval is reported. Differences between the frozen and the adapted model are one observation on 12 photographs and 12 generated images, not an estimate of a population effect.
 
-Seeds control the data split, the evaluation noise and latents (derived from the evaluation `seed` and timestep), the training noise and ordering (`seed`), and each generated image (`seed + index`). The remaining sources of run-to-run variability are as follows:
+Seeds control the prompt encoding, the data split, the evaluation noise and latents (derived from the evaluation `seed` and timestep), the training noise and ordering (`seed`), and each generated image (`seed + index`). The remaining sources of run-to-run variability are as follows:
 
 - **Non-deterministic GPU kernels and float16 autocast** can change low-order digits between runs on the same hardware, and more between different GPUs.
-- **Prompt encoding uses a per-process seed.** `encode_prompts` seeds the prior's sampler with Python's `hash(prompt)`, and Python randomises string hashing in every new process. Within one run the cached embeddings are reused, so the reload comparison is exact. A new kernel, however, can produce different prompt embeddings, and so different images and CLIP scores, for the same prompt and seed. Across runs, generated images are reproducible only when `PYTHONHASHSEED` is fixed before Python starts.
+- **Prompt encoding** seeds the prior's sampler with `prompt_seed(prompt)`, a 31-bit integer taken from the prompt's SHA-256. The same prompt therefore gets the same prior seed in every process. Its embedding is still subject to the GPU nondeterminism above.
 
 CLIP similarities are cosine similarities, not probabilities, and `label_accuracy` is not calibrated. A caller who needs a calibrated measure must label their own images and calibrate against them.
 
@@ -176,7 +176,7 @@ Foreseeable misuse in a sensitive domain includes generating images that could b
 3. **Adapter integrity:** `load_adapter` refuses an artifact whose `format` is not `org.valcorza.kandinsky-generation.adapter.v1`, whose recorded base model is not the pinned decoder revision, or whose `adapter.safetensors` SHA-256 differs from its manifest.
 4. **Input integrity:** `validate_dataset` rejects datasets outside 4..2,000 records, duplicate ids, missing fields, image sides outside 256..4,096 px and captions outside 1..1,000 characters, before any model runs. `generate` rejects out-of-range steps and guidance.
 5. **Bounded adaptation:** `adapt` refuses more than 50 epochs or a learning rate above `1e-2`, and keeps the epoch with the lowest validation loss, so an adaptation that makes the model worse on held-out data is not exported.
-6. **Reproducibility:** the split, the training and evaluation noise, and each generated image are seeded. Runtime packages are pinned exactly in `pyproject.toml` and in the notebook. The exported manifest records the base model identity and adapter configuration. Prompt encoding is not reproducible across processes (see *Approaches to uncertainty and variability*).
+6. **Reproducibility:** the split, the training and evaluation noise, and each generated image are seeded. Runtime packages are pinned exactly in `pyproject.toml` and in the notebook. The exported manifest records the base model identity and adapter configuration. Prompt encoding is seeded from a SHA-256 of the prompt, so it does not depend on Python's per-process hash salt.
 
 The pipeline has no content filter or safety checker on prompts or generated images, and it adds no watermark or provenance metadata to generated images.
 
