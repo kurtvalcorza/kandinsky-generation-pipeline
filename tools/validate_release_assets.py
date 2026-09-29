@@ -72,6 +72,7 @@ CODE_MARKERS = (
     "fetched_kandinsky_2_2_prior = stage_missing_prior_files(PRIOR_WEIGHTS_DIR, allow_download=True)",
     "fetched_clip_vit_b_32_laion2b = stage_missing_scorer_files(SCORER_WEIGHTS_DIR, allow_download=True)",
     "USE_BYOD = False",
+    "BYOD_PATH = ''",
     "splits = fetch_sample_dataset(cache_dir='weights/inat-birds')",
     "splits = split_dataset(load_byod_dataset(byod_path), seed=0)",
     "dataset_report = dataset_manifest(",
@@ -186,6 +187,7 @@ COMMON_CODE_MARKERS = (
     "os.makedirs('outputs', exist_ok=True)",
     "from google.colab import files",
     "files.upload()",
+    "byod_path = Path(BYOD_PATH)",
 )
 COMMON_MARKDOWN_MARKERS = (
     f"**Notebook specification:** DIMER Notebook Specification {NOTEBOOK_SPEC} — **standalone** (§4)",
