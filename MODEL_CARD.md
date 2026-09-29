@@ -236,11 +236,20 @@ The following uses are unacceptable even where the pipeline would work:
 `docs/release-verification.md` holds the procedure and every record. The clean-runtime run of the tutorial notebook:
 
 - **Date:** 2026-09-29
-- **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `6347e25`, blob `dd19501b4aa2` (full identifiers in `docs/release-verification.md`)
+- **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `b674640`, blob `34711f6de24f` (full identifiers in `docs/release-verification.md`)
 - **Runtime:** Kaggle batch kernel on a Tesla T4 (15,360 MiB), Python 3.12.13, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0`
-- **Procedure:** the notebook was fetched at that commit and run with `Run all` in a fresh interpreter, with an empty Hugging Face cache and no repository checkout. Form fields were at their defaults (`USE_BYOD = False`, `RUN_ACTIVITY = False`). The install cell's restart guard fired once because the kernel had preloaded older `numpy` and `protobuf`, and the kernel was restarted and run again from the top.
-- **Observed result:** 12 of 12 code cells ran without error in 848.6 s. Held-out test `denoising_mse` was 0.077038 for the frozen model and 0.076140 after adaptation. `label_accuracy` was 0.8333 for both, against 0.9167 for the real photographs. `reference_similarity` rose from 68.910 to 69.397, against 88.660 for the real photographs. The reloaded adapter reproduced the in-memory results exactly: `denoising_mse_diff` 0.0 and `mean_abs_pixel_diff` 0.0.
-- **Caveats:** one run on one seeded split with 12 held-out photographs and 12 generated images. This is sample-sanity evidence, not a benchmark. The BYOD branch was not exercised.
+- **Procedure:** the notebook was fetched at that commit and run with `Run all` in a fresh interpreter, with an empty Hugging Face cache and no repository checkout, once with the form fields at their defaults. The install cell's restart guard fired once because the kernel had preloaded older `numpy` and `protobuf`, and the kernel was restarted and run again from the top.
+- **Observed result:** 12 of 12 code cells ran without error in 906.8 s. Held-out test `denoising_mse` was 0.077038 for the frozen model and 0.076142 after adaptation. `label_accuracy` was 0.8333 for both, against 0.9167 for the real photographs. `reference_similarity` rose from 68.910 to 69.087, against 88.660 for the real photographs. The reloaded adapter reproduced the in-memory results exactly: `denoising_mse_diff` 0.0 and `mean_abs_pixel_diff` 0.0.
+- **Caveats:** one run on one seeded split with 12 held-out photographs and 12 generated images. This is sample-sanity evidence, not a benchmark.
+
+The BYOD branch was run at the same commit:
+
+- **Date:** 2026-09-29
+- **Subject:** the same notebook and commit, with `USE_BYOD = True` and `BYOD_PATH` set in the executed copy only
+- **Runtime:** as above
+- **Procedure:** a zip of 12 CC0 research-grade iNaturalist photographs (6 Northern Cardinal, 6 Blue Jay) with a `captions.csv` was built inside the kernel, each photograph checked against a pinned SHA-256. After `Run all`, the committed Section 4 source was re-run against two incompatible zips.
+- **Observed result:** 13 of 13 code cells ran without error in 688.7 s. The 12 records were split 8 / 2 / 2 by caption and passed through fine-tuning, evaluation, export and an exact reload. A `captions.csv` without its `caption` column and a 200 × 200 image were each refused with a message naming the failed rule, before any model ran on them.
+- **Caveats:** with one test photograph per caption, these numbers show that the BYOD path runs, not how well the model adapts to such data.
 
 An earlier pre-flight observation of the generator, not the notebook:
 
