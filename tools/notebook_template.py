@@ -1,4 +1,4 @@
-"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 2.0 §4 standalone carrier).
+"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 2.2 §4 standalone carrier).
 
 Only the task-specific prose and stage cells live here. Runtime install, the embedded pipeline
 modules (pipeline.py, samples.py, metrics.py), and the model pin/stage/verify cells are produced
@@ -59,7 +59,7 @@ TEMPLATE = {
         "(4 epochs over 36 images), scores the adapted model on identical inputs, renders a new prompt, exports the adapter as "
         "safetensors with a manifest, and reloads that artifact into a fresh pipeline to verify generation parity. The default path "
         "needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit "
-        "(NOTEBOOK_SPEC 2.0 §5). On a T4 the whole path takes about fifteen minutes of model time after the 16.5 GB of downloads."
+        "(NOTEBOOK_SPEC 2.2 §5). On a T4 the whole path takes about fifteen minutes of model time after the 16.5 GB of downloads."
     ),
     "byod": (
         "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 and re-run from that cell to supply your own "
@@ -440,6 +440,6 @@ TEMPLATE = {
         "- Shakhmatov, A., et al. (2023). Kandinsky 2.2: https://github.com/ai-forever/Kandinsky-2\n"
         "- Hu, E. J., et al. (2022). LoRA: Low-rank adaptation of large language models. ICLR: https://arxiv.org/abs/2106.09685\n"
         "- Cherti, M., et al. (2023). Reproducible scaling laws for contrastive language-image learning. CVPR (the LAION CLIP scorer): https://arxiv.org/abs/2212.07143\n"
-        "- DIMER Notebook Specification 2.0 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)\n"
+        "- DIMER Notebook Specification 2.2 and Model Card Specification 1.2 (in the ml-worker repository)\n"
     ),
 }
