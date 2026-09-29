@@ -5,6 +5,13 @@
 imports removed), template-declared rewrite rules, and extra pinned snapshots (`extra_weights`) for packages
 that stage more than one manifest. Single-module templates render as in /1 except for the generator version.
 
+/2.1 adds the OPTIONAL `guided` template key (NOTEBOOK_SPEC 2.2 §3.5, GDL2/GDL11/GDL12): opening markdown cells
+after the header, an `[Engineering]`-style tag on the generated Sections 1–3, an **Infrastructure** note before
+each generated setup section, `# @title Infrastructure: …` lines on the install and model cells, notes after
+them, and collapsed (`cellView: form`) metadata on every generated setup cell. The carried module cells stay
+byte-identical to the package (their collapse is metadata only). A template without `guided` renders exactly
+as under /2 apart from the generator version.
+
 Usage (from the repository root, or with --repo):
     python tools/build_notebook.py            # write tutorials/<notebook_name>
     python tools/build_notebook.py --check    # exit 1 if the committed notebook differs (PAR3)
@@ -27,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-GENERATOR_VERSION = "build_notebook.py/2"
+GENERATOR_VERSION = "build_notebook.py/2.1"
 NOTEBOOK_SPEC = "2.2"
 
 # ST2: default rewrite rule; a template may replace it with its own `rewrites` list. Every rule must
@@ -97,6 +104,11 @@ def template_contract() -> dict[str, str]:
         "extra_weights": "OPTIONAL list of {key, var, dir, identity: [ID_CONST, REV_CONST], stage, verify} for additional pinned snapshots",
         "model_load": "OPTIONAL replacement for the default `<pipeline_class>.from_pretrained(weights_dir=WEIGHTS_DIR)` expression",
         "package_dir": "OPTIONAL repository-relative directory of the package (default 'src/<package>'; e.g. 'mitra_pipeline' for a root-level package)",
+        "guided": (
+            "OPTIONAL guided-layer dict (§3.5): 'opening' (list of markdown cells after the header), 'engineering_tag' (suffix for "
+            "the generated Section 1–3 headings), 'infrastructure' ({'install'|'modules'|'model': {'title', 'note'}}; a title becomes "
+            "the cell's `# @title` line, a note an Infrastructure callout under the heading) and 'after' ({'install'|'model': markdown})"
+        ),
     }
 
 
@@ -317,6 +329,28 @@ def _md(source: str) -> dict[str, Any]:
 def _code(source: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"cell_type": "code", "execution_count": None, "id": "", "metadata": metadata or {}, "outputs": [], "source": source.rstrip("\n")}
 
+
+# GDL11: collapsed-by-default metadata for generated setup cells (Colab form view; Jupyter source_hidden).
+INFRASTRUCTURE_METADATA: dict[str, Any] = {"cellView": "form", "jupyter": {"source_hidden": True}}
+
+
+def _guided_parts(template: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, dict[str, str]], dict[str, str]]:
+    guided = template.get("guided") or {}
+    tag = guided.get("engineering_tag", "")
+    return guided, (f" · {tag}" if tag else ""), guided.get("infrastructure", {}), guided.get("after", {})
+
+
+def _infra_note(infra: dict[str, dict[str, str]], key: str) -> str:
+    note = infra.get(key, {}).get("note", "")
+    return f"\n\n> **Infrastructure.** {note.strip()}" if note else ""
+
+
+def _infra_code(infra: dict[str, dict[str, str]], key: str, source: str) -> tuple[str, dict[str, Any] | None]:
+    if not infra:
+        return source, None
+    title = infra.get(key, {}).get("title", "")
+    return (f"# @title Infrastructure: {title}\n{source}" if title else source), dict(INFRASTRUCTURE_METADATA)
+
 # NOTEBOOK_SPEC 2.2 §3.4/§28 declarations. A template MAY override `mode`, `run_all` and `byod`;
 # E2E and ARTIFACT-INFERENCE templates MUST state `run_all` themselves (their default paths differ).
 MODES = ("REFERENCE", "GUIDED", "WORKSHOP")
@@ -357,6 +391,7 @@ def _declarations(template: dict[str, Any]) -> tuple[str, str, str]:
 def render(repo: Path, template: dict[str, Any], revision: str | None = None) -> dict[str, Any]:
     ctx = load_context(repo, template, revision)
     mode, run_all, byod = _declarations(template)
+    guided, eng_tag, infra, after = _guided_parts(template)
     stem = template["stem"]
     fmt = {"stem": stem, **{k: ctx[k] for k in ("MODEL_ID", "MODEL_REVISION", "MODEL_LICENSE", "MODEL_KEY")}}
     cells: list[dict[str, Any]] = []
@@ -391,6 +426,8 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
         f"**This notebook does not demonstrate:** {template['exclusions'].strip()}"
     )
     add(_md(header))
+    for opening in guided.get("opening", []):
+        add(_md(opening.format(**fmt)))
 
     prereq = list(template["prerequisites"]) + [
         f"- **External access:** the Hugging Face Hub only, to fetch the pinned `{ctx['MODEL_ID']}` snapshot (~{total_mb:.0f} MB in total) "
@@ -403,15 +440,14 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
     ident_print = ", ".join(f"'{m}': {m}.__version__" for m in imports)
     add(
         _md(
-            "## 1. Install the pinned runtime\n\n"
+            "## 1. Install the pinned runtime" + eng_tag + _infra_note(infra, "install") + "\n\n"
             "The dependency set is pinned exactly (the same `==` pins as the repository's `pyproject.toml` at the generating revision) and "
             "installed directly — there is no repository clone and no package install. If a pin replaces a distribution this runtime has already "
             "imported, the cell stops with a restart instruction rather than continuing with mixed versions. Look for a dictionary reporting the "
             "notebook's source revision, Python, " + ", ".join(f"`{m}`" for m in imports) + " versions, and whether CUDA is available."
         )
     )
-    add(
-        _code(
+    install_code = (
             "import importlib\nimport importlib.metadata\nimport os\nimport platform\nimport subprocess\nimport sys\n\n"
             f"{pins_literal}\n"
             "NOTEBOOK_SOURCE = {\n"
@@ -427,13 +463,15 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
             f"{_INSTALL_GUARD}\n"
             f"import {', '.join(imports)}\n"
             f"print({{'notebook_source': NOTEBOOK_SOURCE, 'python': platform.python_version(), {ident_print}, 'cuda': torch.cuda.is_available()}})"
-        )
     )
+    add(_code(*_infra_code(infra, "install", install_code)))
+    if after.get("install"):
+        add(_md(after["install"].format(**fmt)))
 
     for i, m in enumerate(ctx["modules"]):
         rel = f"{ctx['pkg_rel']}/{m}"
         if i == 0:
-            title = f"## 2. Pipeline code (carried verbatim from `{ctx['pkg_rel']}/` @ `{ctx['module_revision'][:12]}`)"
+            title = f"## 2. Pipeline code (carried verbatim from `{ctx['pkg_rel']}/` @ `{ctx['module_revision'][:12]}`)" + eng_tag + _infra_note(infra, "modules")
             intro = (
                 f"\n\nThe next {n_mod} cell(s) **are** the repository's package, module by module in dependency order: the pinned identity constants, "
                 "snapshot verification (`verify_snapshot`), staged download (`stage_missing_files`), the named operational ceilings, the public "
@@ -445,7 +483,10 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
             add(_md(title + intro + f"\n\n**Module {i + 1}/{n_mod}:** `{rel}`"))
         else:
             add(_md(f"**Module {i + 1}/{n_mod}:** `{rel}` (carried verbatim; see the note above)"))
-        add(_code(ctx["embedded"][m], {"dimer": {"embedded_module": rel, "module_sha256": ctx["per_module_sha256"][rel]}}))
+        module_meta: dict[str, Any] = {"dimer": {"embedded_module": rel, "module_sha256": ctx["per_module_sha256"][rel]}}
+        if infra:
+            module_meta = {**INFRASTRUCTURE_METADATA, **module_meta}
+        add(_code(ctx["embedded"][m], module_meta))
 
     manifest_literal = json.dumps(ctx["manifest"], indent=2, ensure_ascii=False)
     n_files = len(ctx["manifest"]["files"])
@@ -457,7 +498,7 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
     load_expr = template.get("model_load") or f"{template['pipeline_class']}.from_pretrained(weights_dir=WEIGHTS_DIR)"
     add(
         _md(
-            "## 3. Pin, stage and verify the model\n\n"
+            "## 3. Pin, stage and verify the model" + eng_tag + _infra_note(infra, "model") + "\n\n"
             f"The model identity is carried twice — `MODEL_ID`/`MODEL_REVISION` in the module above and the `{n_files}`-file manifest below (paths, "
             "byte sizes, SHA-256) — and the cell first asserts they agree. It writes the manifest into the working-directory snapshot, then "
             f"`stage_missing_files(..., allow_download=True)` fetches exactly the entries that are absent from the Hugging Face Hub **at revision "
@@ -503,7 +544,9 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
         f"pipe = {load_expr}\n"
         "print({'device': getattr(pipe, 'device', None), 'source': getattr(pipe, 'source', 'local-snapshot')})"
     )
-    add(_code(model_code))
+    add(_code(*_infra_code(infra, "model", model_code)))
+    if after.get("model"):
+        add(_md(after["model"].format(**fmt)))
 
     for stage in template["cells"]:
         add(_md(stage["md"].format(**fmt)))

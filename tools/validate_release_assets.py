@@ -31,7 +31,34 @@ MODEL_LOAD_EXPR = (
 )
 # Pinned snapshots (shared prior, CLIP scorer)
 KNOWN_SHAS: frozenset[str] = frozenset({"9fc51ad5732afc5d031724219d22e6c42179c5a8", "1a25a446712ba5ee05982a381eed697ef9b435cf"})
-BYOD_GATES = ("USE_BYOD",)
+BYOD_GATES = ("USE_BYOD", "RUN_ACTIVITY")
+# NOTEBOOK_SPEC 2.2 §3.5 guided layer (GDL1–GDL15): learner-facing elements that must survive regeneration.
+GUIDED_MARKDOWN_MARKERS = (
+    "## How to use this notebook",
+    "**Who this notebook is for.**",
+    "**Form controls.**",
+    "**Two kinds of cell.**",
+    "**Section tags.**",
+    "## The task: Input → Model/System → Output",
+    "## Roadmap",
+    "**Fast path.**",
+    "<summary><strong>Glossary</strong>",
+    "> **Infrastructure.**",
+    "## 10. Optional activity: change one thing",
+    "**Predict → Change one thing → Run → Observe → Explain.**",
+    "## Troubleshooting",
+    "## Conclude with evidence",
+    "**Transfer:**",
+)
+GUIDED_MIN_COUNTS = {
+    "**Predict before running:**": 5,
+    "**What to notice:**": 7,
+    "**Expected result:**": 4,
+    "<summary>Check your reasoning": 7,
+    "**Question tested:**": 2,
+}
+SECTION_TAGS = ("[Concept]", "[Evaluation practice]", "[Engineering]")
+INFRASTRUCTURE_MARKERS = ("PINS = [", "MANIFEST = {")
 EXPECTED_OUTPUTS = (
     "outputs/kandinsky_generation_sample_captions.csv",
     "outputs/kandinsky_generation_frozen_grid.jpg",
@@ -572,6 +599,45 @@ def _validate_notebook_content(
     _check(f"https://huggingface.co/{model_id}" in markdown, f"{path.name}: references must link {model_id}")
 
 
+def _validate_guided_layer(path: Path, notebook: dict, markdown: str) -> None:
+    """GDL1–GDL15 (§3.5): orientation, predictions, checkpoints, an optional activity, collapsed infrastructure."""
+    missing = [marker for marker in GUIDED_MARKDOWN_MARKERS if marker not in markdown]
+    _check(not missing, f"{path.name}: guided layer (§3.5) is missing: {missing}")
+    for marker, minimum in GUIDED_MIN_COUNTS.items():
+        found = markdown.count(marker)
+        _check(found >= minimum, f"{path.name}: guided layer needs at least {minimum} × {marker!r}, found {found}")
+    _check(markdown.count("<details>") == markdown.count("</details>"), f"{path.name}: unbalanced <details> blocks")
+    untagged = [line for line in markdown.splitlines() if re.match(r"^## \d+\. ", line) and not line.rstrip().endswith(SECTION_TAGS)]
+    _check(not untagged, f"{path.name}: numbered sections must end with a section tag {SECTION_TAGS} (GDL12): {untagged}")
+    _check("workshop" not in markdown.lower(), f"{path.name}: learner prose must say 'notebook', not 'workshop' (GDL15)")
+    cells = notebook["cells"]
+    activity = reload_cell = None
+    for index, cell in enumerate(cells):
+        if cell.get("cell_type") != "code":
+            continue
+        source = _cell_source(cell)
+        meta = cell.get("metadata", {})
+        embedded = bool(meta.get("dimer", {}).get("embedded_module"))
+        infrastructure = embedded or any(marker in source for marker in INFRASTRUCTURE_MARKERS)
+        collapsed = meta.get("cellView") == "form" and meta.get("jupyter", {}).get("source_hidden") is True
+        if infrastructure:
+            _check(collapsed, f"{path.name}: infrastructure cell {index} must be collapsed (cellView: form, source_hidden) (GDL11)")
+            if not embedded:
+                _check(source.startswith("# @title Infrastructure: "), f"{path.name}: infrastructure cell {index} needs a '# @title Infrastructure: …' line (GDL11)")
+        else:
+            _check(not collapsed, f"{path.name}: learner cell {index} must not be collapsed")
+        if "RUN_ACTIVITY = False" in source:
+            activity = index
+        if "KandinskyPipeline.from_artifact(" in source:
+            reload_cell = index
+    _check(activity is not None, f"{path.name}: the optional activity must default to RUN_ACTIVITY = False (GDL10, UX7)")
+    _check(
+        reload_cell is not None and activity > reload_cell,
+        f"{path.name}: the optional activity must come after the canonical path's last stage (GDL10)",
+    )
+    _check("if RUN_ACTIVITY:" in _cell_source(cells[activity]), f"{path.name}: the activity must be gated by `if RUN_ACTIVITY:`")
+
+
 def validate_notebooks() -> None:
     tutorials = ROOT / "tutorials"
     notebooks = sorted(tutorials.glob("*.ipynb"))
@@ -586,6 +652,7 @@ def validate_notebooks() -> None:
     _validate_identity(path, code_cells, embedded, revision)
     _validate_parity(path, notebook, code_cells, build)
     _validate_notebook_content(path, code_cells, markdown, embedded)
+    _validate_guided_layer(path, notebook, markdown)
     registry = _read(tutorials / "README.md")
     _check(f"`{path.name}`" in registry, f"{path.name} missing from tutorials/README.md")
     _check(f"`{EXPECTED_PROFILE}`" in registry, f"tutorials/README.md must record `{EXPECTED_PROFILE}`")
