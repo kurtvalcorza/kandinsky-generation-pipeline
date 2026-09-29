@@ -76,7 +76,7 @@ Tests run offline: temporary manifests, synthetic images, stub UNet, never requi
 
 ## Release status
 
-**Candidate** — the `E2E` tutorial notebook `tutorials/kandinsky_generation_colab.ipynb` is generated and verified with all static, parity, unit and local GPU pre-flight tests passing. Promotion to Release-grade is documented in `docs/release-verification.md` and `STATUS.md`.
+**Candidate** — the `E2E` tutorial notebook `tutorials/kandinsky_generation_colab.ipynb` passed a clean-runtime `Run all` on a Kaggle T4 at `6347e25` (2026-09-29). BYOD evidence (REL12) is still needed before promotion to Release-grade; see `docs/release-verification.md` and `STATUS.md`.
 
 ## Licensing
 

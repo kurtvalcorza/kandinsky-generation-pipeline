@@ -81,15 +81,16 @@ Before changing the registry status from `Candidate` to `Release-grade`:
 
 | Notebook | Commit / notebook blob | Date (UTC) | Executor | Outcome |
 |---|---|---|---|---|
-| `kandinsky_generation_colab.ipynb` (`E2E`) | pending promotion | 2026-09-24 | Colab / Kaggle T4 clean container | Gated for promotion |
+| `kandinsky_generation_colab.ipynb` (`E2E`) | `6347e25` / blob `dd19501b4aa2` | 2026-09-29 | Kaggle T4 clean container, fresh interpreter, empty Hugging Face cache, no repository checkout | **PASS** — default `Run all` path, 12/12 code cells; see *Recorded executions* |
 | `kandinsky_generation_colab.ipynb` | local pre-flight | 2026-09-24 | Local pre-flight harness (WSL, CPython 3.12.3, CUDA RTX 5070 Ti laptop, `google.colab` shim) | PASS — local feasibility and unit test suite verified; pre-flight only, **not** promotion evidence |
 
 ## Recorded executions
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
+| 2026-09-29 | `6347e25db6477378de0f9d536596ef2de2df4c70` / blob `dd19501b4aa2793608f916622cd2b3f4aae2887b` | Kaggle batch kernel, Tesla T4 (15,360 MiB), Python 3.12.13, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0`; notebook fetched at the commit and blob-verified, run in a fresh interpreter with `nbclient`, Hugging Face cache empty at start | Default `Run all` path, form fields at their defaults (`USE_BYOD = False`, `RUN_ACTIVITY = False`): stage and verify three snapshots (16,473 MB) → sample → validate → encode prompts and release prior → frozen evaluation → LoRA fine-tuning → adapted evaluation → new prompt → export → fresh reload | 848.6 s | **PASSED** — 12/12 code cells, 0 errors. The install cell's restart guard fired once because the Kaggle kernel had preloaded `numpy 2.0.2`, `protobuf 5.29.5` and `cuda-bindings 12.9.4`; the executor restarted the kernel and re-ran from the top, as a user would. Held-out test `denoising_mse` 0.077038 (frozen) → 0.076140 (adapted); `label_accuracy` 0.8333 → 0.8333 (real-photo ceiling 0.9167); `reference_similarity` 68.910 → 69.397 (ceiling 88.660); `clip_prompt_similarity` 33.218 → 32.235 (real photos 30.250). Reload parity: `denoising_mse_diff` 0.0, `mean_abs_pixel_diff` 0.0. Adapter `adapter.safetensors` 6,607,664 bytes, SHA-256 `6a49cc95…`. One run on 12 held-out photographs; sample-sanity evidence, not a benchmark |
 | 2026-09-24 | local feasibility | Local GPU harness (WSL, CPython 3.12.3, CUDA RTX 5070 Ti laptop 12 GB) | Stage → load decoder + prior → generate 512² image (20 steps, guidance 4.0) | 14.70 s | **PASSED** — peak VRAM allocated: 3,224.4 MB (res: 3,904.0 MB); CPU offload needed: False; pre-flight feasibility evidence |
 
 ## Current status
 
-**Candidate.** The `E2E` notebook `tutorials/kandinsky_generation_colab.ipynb` passes all static validation, unit test suites (34 tests passing), and local GPU pre-flight execution on the RTX 5070 Ti laptop GPU. Promotion to **Release-grade** requires recording a full clean-runtime execution in a supported cloud environment with no pre-cached weights.
+**Candidate.** A clean-runtime `Run all` of the default path at `6347e25` passed on a Kaggle T4 on 2026-09-29 (REL1–REL8; recorded above). Promotion to **Release-grade** still needs the REL12 evidence: a run of the BYOD branch that accepts representative user data and rejects at least one incompatible input. The BYOD branch reads its zip only through the Colab upload dialog, so it has no location field for a non-interactive executor (Notebook Specification 2.2 EXE2); adding one changes the notebook and needs a new default-path run.
