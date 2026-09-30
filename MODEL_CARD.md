@@ -24,7 +24,7 @@ date_published_source: "Hugging Face Hub commit `9ae140d347fed8ce6e8bb3005dcc1f4
 
 ## Interactive Colab Tutorials
 
-This pipeline provides a ready-to-run, self-contained Google Colab notebook. It carries the repository's code in its own cells and runs end to end without cloning the repository:
+This pipeline provides a ready-to-run, self-contained Google Colab notebook. It carries the repository's code in its own cells and runs end to end without cloning the repository. It installs nothing into the notebook kernel: every stage runs in an isolated environment built from a committed hash lock, so `Run all` needs no runtime restart:
 
 - **End-to-End Text-to-Image Fine-Tuning Tutorial**:  
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/kandinsky-generation-pipeline/blob/main/tutorials/kandinsky_generation_colab.ipynb) [`kandinsky_generation_colab.ipynb`](https://github.com/kurtvalcorza/kandinsky-generation-pipeline/blob/main/tutorials/kandinsky_generation_colab.ipynb)  
@@ -107,7 +107,7 @@ The pipeline sees only decoded RGB pixels after a resize and centre crop. It can
 
 ###### Environment
 
-**Operating environment.** Python 3.12 with the pinned packages `torch==2.14.0`, `diffusers==0.40.0`, `transformers==5.17.0`, `peft==0.21.0`, `accelerate==1.15.0`, `safetensors==0.8.0`, `huggingface-hub==1.32.0`, `numpy==2.5.3` and `pillow==11.3.0`. The UNet, prior and MoVQ run in float16 on CUDA. The LoRA parameters are kept in float32, and training uses float16 autocast. The tutorial requires a CUDA GPU with at least 15 GB of memory, such as a 16 GB T4, and about 25 GB of free disk for the 16.5 GB of pinned weights. On CPU the code runs in float32 but is impractically slow for the tutorial.
+**Operating environment.** Python 3.12 with the pinned packages `torch==2.14.0`, `diffusers==0.40.0`, `transformers==5.17.0`, `peft==0.21.0`, `accelerate==1.15.0`, `safetensors==0.8.0`, `huggingface-hub==1.32.0`, `numpy==2.5.3` and `pillow==11.3.0`. The tutorial notebook does not install these into its kernel: it builds a separate CPython 3.12.12 environment with a pinned `uv` from `tutorials/requirements-colab.lock.txt`, which locks those pins and all their dependencies to exact versions and SHA-256 digests for Linux x86_64 (the Linux `torch` 2.14.0 wheel is the CUDA 13.0 build), and runs each stage in its own process there. The UNet, prior and MoVQ run in float16 on CUDA. The LoRA parameters are kept in float32, and training uses float16 autocast. The tutorial requires a Linux x86_64 runtime with a CUDA GPU of at least 15 GB of memory, such as a 16 GB T4, and about 30 GB of free disk: 16.5 GB of pinned weights and about 12 GB for the isolated environment. On CPU the code runs in float32 but is impractically slow for the tutorial.
 
 **Data environment.** Adaptation assumes that the photographs the adapter is trained on resemble the images the user later wants to generate: the same kind of subject, framing and photographic style. The captions used at generation time should follow the same pattern as the training captions. Prompts that fall outside the adapted subject revert towards the base model's behaviour. Held-out denoising loss is meaningful only when the validation photographs come from the same distribution as the training photographs.
 
@@ -176,7 +176,7 @@ Foreseeable misuse in a sensitive domain includes generating images that could b
 3. **Adapter integrity:** `load_adapter` refuses an artifact whose `format` is not `org.valcorza.kandinsky-generation.adapter.v1`, whose recorded base model is not the pinned decoder revision, or whose `adapter.safetensors` SHA-256 differs from its manifest.
 4. **Input integrity:** `validate_dataset` rejects datasets outside 4..2,000 records, duplicate ids, missing fields, image sides outside 256..4,096 px and captions outside 1..1,000 characters, before any model runs. `generate` rejects out-of-range steps and guidance.
 5. **Bounded adaptation:** `adapt` refuses more than 50 epochs or a learning rate above `1e-2`, and keeps the epoch with the lowest validation loss, so an adaptation that makes the model worse on held-out data is not exported.
-6. **Reproducibility:** the split, the training and evaluation noise, and each generated image are seeded. Runtime packages are pinned exactly in `pyproject.toml` and in the notebook. The exported manifest records the base model identity and adapter configuration. Prompt encoding is seeded from a SHA-256 of the prompt, so it does not depend on Python's per-process hash salt.
+6. **Reproducibility:** the split, the training and evaluation noise, and each generated image are seeded. Runtime packages are pinned exactly in `pyproject.toml`; the notebook installs them, with every transitive dependency, from a hash lock into an isolated environment and never into the hosted runtime's own interpreter. The exported manifest records the base model identity and adapter configuration. Prompt encoding is seeded from a SHA-256 of the prompt, so it does not depend on Python's per-process hash salt.
 
 The pipeline has no content filter or safety checker on prompts or generated images, and it adds no watermark or provenance metadata to generated images.
 
@@ -233,7 +233,18 @@ The following uses are unacceptable even where the pipeline would work:
 
 ## Verification records
 
-`docs/release-verification.md` holds the procedure and every record. The clean-runtime run of the tutorial notebook:
+`docs/release-verification.md` holds the procedure and every record. The current notebook, which runs every stage in an isolated hash-locked environment, was run three times at commit `256fcb2`:
+
+- **Date:** 2026-09-30
+- **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `256fcb2`, blob `26a6d01839ff`
+- **Runtime:** Google Colab, Tesla T4 (15,360 MiB); the notebook kernel ran Python 3.13.15, and the isolated environment ran Python 3.12.12 with `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0` and `peft 0.21.0`
+- **Procedure:** `Run all` from a fresh runtime with the form fields at their defaults
+- **Observed result:** 11 of 11 code cells ran in one pass without error or restart. Held-out test `denoising_mse` was 0.077038 for the frozen model and 0.07613 after adaptation; `label_accuracy` was 0.8333 for both, against 0.9167 for the real photographs. A reload in a fresh process reproduced the adapted model's results exactly.
+- **Caveats:** one run on one seeded split. This is sample-sanity evidence, not a benchmark.
+
+The same commit also passed a Kaggle T4 run in strict single-pass mode (a restart request fails the run), with the same results, and the BYOD journey: 12 representative photographs were carried through every stage, and a `captions.csv` without its `caption` column and a 200 × 200 image were each refused with the validator's message.
+
+`docs/release-verification.md` also keeps the records of the **previous** notebook revision, which installed its pins into the kernel and needed a manual restart on hosted runtimes. The clean-runtime run of that previous tutorial notebook:
 
 - **Date:** 2026-09-29
 - **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `b674640`, blob `34711f6de24f` (full identifiers in `docs/release-verification.md`)
