@@ -233,7 +233,18 @@ The following uses are unacceptable even where the pipeline would work:
 
 ## Verification records
 
-`docs/release-verification.md` holds the procedure and every record. The records below are of the **previous** notebook revision, which installed its pins into the kernel; the current notebook runs the same stages in an isolated hash-locked environment and has not yet been run on hardware. The clean-runtime run of the previous tutorial notebook:
+`docs/release-verification.md` holds the procedure and every record. The current notebook, which runs every stage in an isolated hash-locked environment, was run three times at commit `256fcb2`:
+
+- **Date:** 2026-09-30
+- **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `256fcb2`, blob `26a6d01839ff`
+- **Runtime:** Google Colab, Tesla T4 (15,360 MiB); the notebook kernel ran Python 3.13.15, and the isolated environment ran Python 3.12.12 with `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0` and `peft 0.21.0`
+- **Procedure:** `Run all` from a fresh runtime with the form fields at their defaults
+- **Observed result:** 11 of 11 code cells ran in one pass without error or restart. Held-out test `denoising_mse` was 0.077038 for the frozen model and 0.07613 after adaptation; `label_accuracy` was 0.8333 for both, against 0.9167 for the real photographs. A reload in a fresh process reproduced the adapted model's results exactly.
+- **Caveats:** one run on one seeded split. This is sample-sanity evidence, not a benchmark.
+
+The same commit also passed a Kaggle T4 run in strict single-pass mode (a restart request fails the run), with the same results, and the BYOD journey: 12 representative photographs were carried through every stage, and a `captions.csv` without its `caption` column and a 200 × 200 image were each refused with the validator's message.
+
+`docs/release-verification.md` also keeps the records of the **previous** notebook revision, which installed its pins into the kernel and needed a manual restart on hosted runtimes. The clean-runtime run of that previous tutorial notebook:
 
 - **Date:** 2026-09-29
 - **Subject:** `tutorials/kandinsky_generation_colab.ipynb` at commit `b674640`, blob `34711f6de24f` (full identifiers in `docs/release-verification.md`)
