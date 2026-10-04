@@ -1,7 +1,14 @@
 """DIMER pipeline for Kandinsky 2.2 Text-to-Image: verified snapshots, two-stage generation (Prior + Decoder),
 held-out denoising-loss evaluation, CLIP-scored generations, and bounded LoRA fine-tuning with a portable adapter."""
 
-from .metrics import ClipScorer, real_photo_baseline, score_generations
+from .metrics import (
+    REAL_PHOTO_REFERENCE_KIND,
+    REAL_PHOTO_REFERENCE_READING,
+    ClipScorer,
+    real_photo_baseline,
+    real_photo_reference,
+    score_generations,
+)
 from .pipeline import (
     DEFAULT_GUIDANCE,
     DEFAULT_STEPS,
@@ -61,6 +68,7 @@ from .samples import (
     CAPTION_TEMPLATE,
     CORPUS_BASE_URL,
     CORPUS_LICENSE,
+    MIN_BYOD_IMAGES_PER_CAPTION,
     SAMPLE_LABEL_SOURCE,
     SAMPLE_RECORDS,
     SAMPLE_SPLIT,
@@ -95,6 +103,7 @@ __all__ = [
     "MANIFEST_NAME",
     "MAX_CAPTION_CHARS",
     "MAX_IMAGE_SIDE",
+    "MIN_BYOD_IMAGES_PER_CAPTION",
     "MIN_IMAGE_SIDE",
     "MIN_TRAIN_RECORDS",
     "MODEL_ID",
@@ -110,6 +119,8 @@ __all__ = [
     "PRIOR_REVISION",
     "PRIOR_TENSORS",
     "PRIOR_WEIGHTS_DIR",
+    "REAL_PHOTO_REFERENCE_KIND",
+    "REAL_PHOTO_REFERENCE_READING",
     "RESOLUTION",
     "SAMPLE_LABEL_SOURCE",
     "SAMPLE_RECORDS",
@@ -140,6 +151,7 @@ __all__ = [
     "prompt_seed",
     "read_corpus",
     "real_photo_baseline",
+    "real_photo_reference",
     "sample_prompts",
     "score_generations",
     "split_dataset",

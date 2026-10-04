@@ -36,6 +36,9 @@ CORPUS_BYTES = 5_789_324
 DEFAULT_CACHE_DIR = Path("weights") / "inat-birds"
 SAMPLE_SEED = 42
 SAMPLE_SPLIT = {"train": 6, "validation": 2, "test": 2}  # per species; 6 species -> 36 / 12 / 12
+# The stated BYOD minimum: a zip in which at least one caption has this many distinct images is always accepted by
+# `split_dataset` (it leaves >= MIN_TRAIN_RECORDS training records and >= 1 test record); smaller zips may be refused.
+MIN_BYOD_IMAGES_PER_CAPTION = 6
 CAPTION_TEMPLATE = "a photo of a {common_name} ({scientific_name}), a wild bird photographed outdoors"
 SPECIES: dict[str, tuple[str, str]] = {
     "song_sparrow": ("Melospiza melodia", "Song Sparrow"),
@@ -792,8 +795,13 @@ def split_dataset(
     test_fraction: float = 0.2,
     seed: int = 0,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Seeded shuffle of a BYOD dataset into train/validation/test, grouped by caption, after de-duplicating
-    images. Every caption keeps at least one test record when it has three or more images."""
+    """Seeded split of a BYOD dataset into train/validation/test, STRATIFIED WITHIN EACH CAPTION (every caption with
+    three or more images contributes to all three sets; it is not a group split that holds whole captions out), after
+    removing exact (pixel-identical) duplicate images. A caption with n >= 3 images gives max(1, round(n * test_fraction))
+    test and round(n * val_fraction) validation records; a caption with fewer goes to training only. The split
+    assumes the remaining images are independent: near-duplicates (bursts, crops, the same individual or scene) are
+    not detected and can sit on both sides. With the default fractions, any dataset in which one caption has at least
+    `MIN_BYOD_IMAGES_PER_CAPTION` (6) distinct images is accepted."""
     if not (0.0 <= val_fraction < 1.0 and 0.0 < test_fraction < 1.0 and val_fraction + test_fraction < 1.0):
         raise ValueError("fractions must satisfy 0 <= val < 1, 0 < test < 1, val + test < 1")
     checked = validate_dataset(records)["records"]
@@ -817,9 +825,14 @@ def split_dataset(
     for part in splits.values():
         rng.shuffle(part)
     if len(splits["train"]) < MIN_TRAIN_RECORDS:
-        raise ValueError(f"split leaves {len(splits['train'])} training records; at least {MIN_TRAIN_RECORDS} are required")
+        raise ValueError(
+            f"split leaves {len(splits['train'])} training records; at least {MIN_TRAIN_RECORDS} are required "
+            f"(give at least one caption {MIN_BYOD_IMAGES_PER_CAPTION} or more distinct images)"
+        )
     if not splits["test"]:
-        raise ValueError("split leaves no test record; give at least one caption three or more images")
+        raise ValueError(
+            f"split leaves no test record; give at least one caption {MIN_BYOD_IMAGES_PER_CAPTION} or more distinct images"
+        )
     return splits
 
 

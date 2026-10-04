@@ -324,8 +324,9 @@ def stage_encode(run: Run) -> None:
 
 
 def stage_frozen(run: Run) -> None:
-    """Section 6: the frozen model's held-out denoising loss and CLIP-scored generations, and the real-photo ceiling."""
-    from kandinsky_generation_pipeline import real_photo_baseline, sample_prompts, score_generations
+    """Section 6: the frozen model's held-out denoising loss and CLIP-scored generations, and the leave-one-out
+    real-photo reference line (each photo excluded from its own reference; a reference, not a ceiling)."""
+    from kandinsky_generation_pipeline import real_photo_reference, sample_prompts, score_generations
 
     opts = run.options
     splits, data = load_data(run, "frozen")
@@ -343,11 +344,11 @@ def stage_frozen(run: Run) -> None:
     frozen_generation = pipe.generate(generation_prompts, seed=GENERATION_SEED, steps=opts.steps, guidance_scale=opts.guidance)
     print({"generated": len(frozen_generation["images"]), "steps": frozen_generation["steps"], "guidance_scale": frozen_generation["guidance_scale"], "seconds": frozen_generation["seconds"], "adapted": frozen_generation["model"]["adapted"]})
     frozen_scores = score_generations(scorer, frozen_generation["images"], references=test_records)
-    real_ceiling = real_photo_baseline(scorer, test_records)
-    print({"frozen_generations": {k: frozen_scores[k] for k in ("clip_prompt_similarity", "label_accuracy", "reference_similarity")}})
-    print({"real_photo_ceiling": {k: real_ceiling[k] for k in ("clip_prompt_similarity", "label_accuracy", "reference_similarity")}})
+    real_reference = real_photo_reference(scorer, test_records)
+    print({"frozen_generations": {k: frozen_scores.get(k) for k in ("clip_prompt_similarity", "label_accuracy", "reference_similarity")}})
+    print({"real_photo_reference_leave_one_out": {k: real_reference.get(k) for k in ("clip_prompt_similarity", "label_accuracy", "reference_similarity")}, "photos_without_a_reference": real_reference["n_without_reference"]})
     for entry in frozen_scores["per_image"][:: opts.images_per_prompt]:
-        print({"prompt": entry["prompt"][:42], "clip": entry["clip_prompt_similarity"], "nearest": entry["nearest_prompt"][13:40], "correct": entry["correct"], "reference_similarity": entry["reference_similarity"]})
+        print({"prompt": entry["prompt"][:42], "clip": entry["clip_prompt_similarity"], "nearest": entry["nearest_prompt"][13:40], "correct": entry["correct"], "reference_similarity": entry.get("reference_similarity")})
     grid_path = grid([g["image"] for g in frozen_generation["images"]], run.out / f"{STEM}_frozen_grid.jpg")
     print({"grid": str(grid_path)})
     record = {
@@ -357,7 +358,7 @@ def stage_frozen(run: Run) -> None:
         "test": frozen_test,
         "generation_result": without_images(frozen_generation),
         "generations": frozen_scores,
-        "real_photo_ceiling": real_ceiling,
+        "real_photo_reference": real_reference,
     }
     run.write_state("frozen.json", record)
     run.write_output("frozen.json", record)
@@ -424,20 +425,21 @@ def stage_evaluate(run: Run) -> None:
     adapted_test = pipe.evaluate(test_records, seed=EVAL_SEED)
     adapted_generation = pipe.generate(settings["prompts"], seed=settings["seed"], steps=settings["steps"], guidance_scale=settings["guidance_scale"])
     adapted_scores = score_generations(scorer, adapted_generation["images"], references=test_records)
-    frozen_val, frozen_test, frozen_scores, real_ceiling = frozen["validation"], frozen["test"], frozen["generations"], frozen["real_photo_ceiling"]
+    frozen_val, frozen_test, frozen_scores, real_reference = frozen["validation"], frozen["test"], frozen["generations"], frozen["real_photo_reference"]
     comparison = {
         "denoising_mse_validation": {"frozen": frozen_val["denoising_mse"], "adapted": adapted_val["denoising_mse"]},
         "denoising_mse_test": {"frozen": frozen_test["denoising_mse"], "adapted": adapted_test["denoising_mse"]},
         "denoising_mse_test_by_timestep": {t: {"frozen": frozen_test["by_timestep"][t], "adapted": adapted_test["by_timestep"][t]} for t in adapted_test["by_timestep"]},
-        "clip_prompt_similarity": {"frozen": frozen_scores["clip_prompt_similarity"], "adapted": adapted_scores["clip_prompt_similarity"], "real_photos": real_ceiling["clip_prompt_similarity"]},
-        "label_accuracy": {"frozen": frozen_scores["label_accuracy"], "adapted": adapted_scores["label_accuracy"], "real_photos": real_ceiling["label_accuracy"]},
-        "reference_similarity": {"frozen": frozen_scores["reference_similarity"], "adapted": adapted_scores["reference_similarity"], "real_photos": real_ceiling["reference_similarity"]},
+        "clip_prompt_similarity": {"frozen": frozen_scores["clip_prompt_similarity"], "adapted": adapted_scores["clip_prompt_similarity"], "real_photo_reference": real_reference["clip_prompt_similarity"]},
+        "label_accuracy": {"frozen": frozen_scores["label_accuracy"], "adapted": adapted_scores["label_accuracy"], "real_photo_reference": real_reference["label_accuracy"]},
+        "reference_similarity": {"frozen": frozen_scores.get("reference_similarity"), "adapted": adapted_scores.get("reference_similarity"), "real_photo_reference": real_reference.get("reference_similarity")},
     }
     for name, row in comparison.items():
         print({name: row})
+    print({"real_photo_reference": real_reference["reference_kind"], "reading": real_reference["reading"]})
     step = settings["images_per_prompt"]
     for before, after in zip(frozen_scores["per_image"][::step], adapted_scores["per_image"][::step], strict=True):
-        print({"prompt": before["prompt"][:42], "reference_similarity": {"frozen": before["reference_similarity"], "adapted": after["reference_similarity"]}, "correct": {"frozen": before["correct"], "adapted": after["correct"]}})
+        print({"prompt": before["prompt"][:42], "reference_similarity": {"frozen": before.get("reference_similarity"), "adapted": after.get("reference_similarity")}, "correct": {"frozen": before["correct"], "adapted": after["correct"]}})
     grid_path = grid([g["image"] for g in adapted_generation["images"]], run.out / f"{STEM}_adapted_grid.jpg")
     print({"grid": str(grid_path)})
     evaluation_report = {
@@ -449,7 +451,7 @@ def stage_evaluate(run: Run) -> None:
         "generation": {k: settings[k] for k in ("steps", "guidance_scale", "images_per_prompt", "seed")},
         "frozen": {"validation": frozen_val, "test": frozen_test, "generations": frozen_scores},
         "adapted": {"validation": adapted_val, "test": adapted_test, "generations": adapted_scores, "loaded_from": "exported artifact, fresh process"},
-        "real_photo_ceiling": real_ceiling,
+        "real_photo_reference": real_reference,
         "comparison": comparison,
         "adaptation": adapted_state["adaptation"],
         "history": adapted_state["history"],
@@ -564,11 +566,11 @@ def stage_activity(run: Run) -> None:
     scorer = load_scorer(run, pipe.device)
     activity_generation = pipe.generate(settings["prompts"], seed=settings["seed"], steps=settings["steps"], guidance_scale=guidance)
     activity_scores = score_generations(scorer, activity_generation["images"], references=splits["test"])
-    real_ceiling = frozen["real_photo_ceiling"]
+    real_reference = frozen["real_photo_reference"]
     adapted_scores = evaluated["adapted_generations"]
     rows = {}
     for key in ("clip_prompt_similarity", "label_accuracy", "reference_similarity"):
-        rows[key] = {f"guidance {settings['guidance_scale']}": adapted_scores[key], f"guidance {guidance}": activity_scores[key], "real_photos": real_ceiling[key]}
+        rows[key] = {f"guidance {settings['guidance_scale']}": adapted_scores.get(key), f"guidance {guidance}": activity_scores.get(key), "real_photo_reference": real_reference.get(key)}
         print({key: rows[key]})
     seconds = {f"guidance {settings['guidance_scale']}": evaluated["generation_seconds"], f"guidance {guidance}": activity_generation["seconds"]}
     print({"seconds": seconds})
