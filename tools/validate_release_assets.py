@@ -121,7 +121,9 @@ RUNNER_MARKERS = (
     "frozen_test = pipe.evaluate(test_records, seed=EVAL_SEED)",
     "frozen_generation = pipe.generate(generation_prompts, seed=GENERATION_SEED, steps=opts.steps, guidance_scale=opts.guidance)",
     'frozen_scores = score_generations(scorer, frozen_generation["images"], references=test_records)',
-    "real_ceiling = real_photo_baseline(scorer, test_records)",
+    # KGN-M1: the real photographs are a leave-one-out reference line, not a ceiling
+    "real_reference = real_photo_reference(scorer, test_records)",
+    '"real_photo_reference": real_reference',
     "adapt_result = pipe.adapt(",
     "lr=opts.lr",
     "batch_size=opts.batch_size",
@@ -157,8 +159,14 @@ MARKDOWN_MARKERS = (
     "prior pipeline can be released",
     "Generation has no ground",
     "denoising loss",
-    "real-photo ceiling",
+    "reference line, not a ceiling",
+    "leave-one-out",
     "not a human judgement",
+    # KGN-m1 / KGN-m2 / KGN-m3: independence assumption, pretraining overlap, the one stated BYOD minimum
+    "assumes the photographs are independent",
+    "Stratify by caption",
+    "Pretraining overlap.",
+    "at least one caption with six or more distinct images",
     "Apache-2.0",
     "sample-sanity",
     "CC0",
@@ -166,6 +174,17 @@ MARKDOWN_MARKERS = (
     "--require-hashes",
 )
 # Direct model-library use that must stay inside the carried files (G2): the kernel imports no model library at all.
+# Learner-facing text the review found wrong (KGN-M1 the real-photo "ceiling", KGN-m1 the "hold out by caption" label
+# for a within-caption stratified split, KGN-m3 BYOD minimums the code refuses, KGN-m4 a duration said to be unrecorded).
+STALE_MARKDOWN = (
+    "real-photo ceiling",
+    "the best a generator could reach",
+    "Hold out by caption",
+    "at least four images, and at least one caption with three or more images",
+    "at least three images per caption",
+    "provide at least four training images in total",
+    "its duration has not yet been recorded",
+)
 FORBIDDEN_IN_KERNEL = (
     "huggingface_hub",
     "hf_hub_download(",
@@ -640,6 +659,11 @@ def _validate_notebook_content(path: Path, notebook: dict, code_cells: list[tupl
     _validate_gates(path, code_cells)
     missing_md = [marker for marker in COMMON_MARKDOWN_MARKERS + MARKDOWN_MARKERS if marker not in markdown]
     _check(not missing_md, f"{path.name}: missing learner-facing markers: {missing_md}")
+    stale = [marker for marker in STALE_MARKDOWN if marker in markdown]
+    _check(not stale, f"{path.name}: stale learner-facing text: {stale}")
+    # KGN-M1: "ceiling" is used only to say the real photographs are NOT one.
+    loose = [m.start() for m in re.finditer(r"ceiling", markdown) if not markdown[: m.start()].endswith("not a ")]
+    _check(not loose, f"{path.name}: markdown calls something a ceiling ({len(loose)} place(s)); the real photographs are a reference line, not a ceiling (KGN-M1)")
     _check("restart" not in markdown.lower().replace("no runtime restart", "").replace("no restart", ""), f"{path.name}: learner prose must not instruct a runtime restart (RUN10)")
     _check(f"**Profile:** `{EXPECTED_PROFILE}`" in markdown, f"{path.name}: markdown must state the profile")
     _check(f"https://huggingface.co/{model_id}" in markdown, f"{path.name}: references must link {model_id}")

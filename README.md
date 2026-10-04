@@ -1,6 +1,6 @@
 # Kandinsky 2.2 Generation Pipeline
 
-DIMER-oriented pipeline for **Kandinsky 2.2 Text-to-Image** (`kandinsky-community/kandinsky-2-2-decoder`, the 1.25 B-parameter UNet diffusion model for 512 × 512 and 1024 × 1024 text-to-image generation), pinned to an immutable Hugging Face revision together with the shared `kandinsky-community/kandinsky-2-2-prior` and a CLIP scorer for evaluation. The repository exposes seeded text-to-image generation, a held-out denoising-loss and CLIP-scored evaluation against a real-photo ceiling, a captioned-image contract with explicit ceilings, a bounded LoRA fine-tuning contract with a portable safetensors adapter, a `MODEL_CARD.md` at DIMER Model Card Specification 1.2, and a standalone `E2E` tutorial at DIMER Notebook Specification 2.2.
+DIMER-oriented pipeline for **Kandinsky 2.2 Text-to-Image** (`kandinsky-community/kandinsky-2-2-decoder`, the 1.25 B-parameter UNet diffusion model for 512 × 512 and 1024 × 1024 text-to-image generation), pinned to an immutable Hugging Face revision together with the shared `kandinsky-community/kandinsky-2-2-prior` and a CLIP scorer for evaluation. The repository exposes seeded text-to-image generation, a held-out denoising-loss and CLIP-scored evaluation beside a leave-one-out real-photo reference line, a captioned-image contract with explicit limits, a bounded LoRA fine-tuning contract with a portable safetensors adapter, a `MODEL_CARD.md` at DIMER Model Card Specification 1.2, and a standalone `E2E` tutorial at DIMER Notebook Specification 2.2.
 
 ## Upstream alignment
 
@@ -16,13 +16,13 @@ DIMER-oriented pipeline for **Kandinsky 2.2 Text-to-Image** (`kandinsky-communit
 
 **The prior pipeline is loaded once, used once and released.** The prior pipeline takes ~7 GB in float16 — releasing it before training leaves the GPU with maximum VRAM headroom for the UNet training graph. `encode_prompts()` encodes text prompts into CLIP image embeddings, and `release_prior()` drops the prior; `generate()`, `evaluate()` and `adapt()` read the prompt cache, and `export_prompt_cache()` / `import_prompt_cache()` hand it to a second pipeline without reloading the prior.
 
-**Generation has no ground truth, and the numbers say what they are.** `evaluate()` reports the held-out *denoising loss* — the training objective on photographs the model never trained on, at fixed timesteps with seeded noise, so the frozen and adapted models see identical inputs. `metrics.score_generations()` reports CLIP prompt similarity, label accuracy, and reference similarity to real photographs; `real_photo_baseline()` reports the same three numbers on real photographs — the ceiling. None of these is a human judgement of image quality.
+**Generation has no ground truth, and the numbers say what they are.** `evaluate()` reports the held-out *denoising loss* — the training objective on photographs the model never trained on, at fixed timesteps with seeded noise, so the frozen and adapted models see identical inputs. `metrics.score_generations()` reports CLIP prompt similarity, label accuracy, and reference similarity to real photographs; `real_photo_reference()` (the earlier name `real_photo_baseline()` is an alias) reports the same three numbers on the real photographs, each photo's reference similarity measured against the *other* photos of its caption (leave-one-out) — a reference line, not a ceiling: generated images can score above it. None of these is a human judgement of image quality.
 
 ## Quick start
 
 ```python
 from kandinsky_generation_pipeline import KandinskyPipeline, fetch_sample_dataset, sample_prompts
-from kandinsky_generation_pipeline.metrics import ClipScorer, score_generations, real_photo_baseline
+from kandinsky_generation_pipeline.metrics import ClipScorer, real_photo_reference, score_generations
 
 pipe = KandinskyPipeline.from_pretrained(use_lora=True)     # verifies snapshots, loads decoder UNet + LoRA, MoVQ
 splits = fetch_sample_dataset()                              # 36 / 12 / 12 pinned CC0 iNaturalist bird photographs, six captions
@@ -31,7 +31,7 @@ pipe.release_prior()                                         # prior released; i
 print(pipe.evaluate(splits["test"])["denoising_mse"])       # frozen model, held-out denoising loss
 scorer = ClipScorer()
 images = pipe.generate(sample_prompts(splits["test"]), seed=1000)["images"]
-print(score_generations(scorer, images, references=splits["test"]), real_photo_baseline(scorer, splits["test"]))
+print(score_generations(scorer, images, references=splits["test"]), real_photo_reference(scorer, splits["test"]))
 pipe.adapt(splits["train"], splits["validation"])            # bounded LoRA fine-tuning, epoch selected by validation loss
 print(pipe.evaluate(splits["test"])["denoising_mse"])       # adapted model, identical inputs
 pipe.save_artifact("outputs/adapter")
@@ -78,7 +78,7 @@ The notebook installs nothing into its own kernel. It downloads a pinned `uv` wh
 
 ## Release status
 
-**Release-grade** — the tutorial notebook runs in an isolated hash-locked environment and passed `Run all` in one pass on Google Colab and on a strict Kaggle T4 run, plus the REL12 BYOD journey, at `256fcb2`; see `docs/release-verification.md` and `STATUS.md`.
+**Candidate** — the tutorial notebook runs in an isolated hash-locked environment; its previous revision passed `Run all` in one pass on Google Colab and on a strict Kaggle T4 run, plus the REL12 BYOD journey, at `256fcb2`, but the notebook was regenerated for the 2026-10-02 review fixes (KGN-M1, KGN-m1..m4), so its blob is no longer the `26a6d018` blob the hosted runs at `256fcb2` executed; it needs a new hosted `Run all` on its own blob before a human promotes it; see `docs/release-verification.md` and `STATUS.md`.
 
 ## Licensing
 
