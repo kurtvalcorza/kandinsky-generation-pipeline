@@ -78,7 +78,7 @@ The notebook installs nothing into its own kernel. It downloads a pinned `uv` wh
 
 ## Release status
 
-**Candidate** — the tutorial notebook runs in an isolated hash-locked environment; its previous revision passed `Run all` in one pass on Google Colab and on a strict Kaggle T4 run, plus the REL12 BYOD journey, at `256fcb2`, but the notebook was regenerated for the 2026-10-02 review fixes (KGN-M1, KGN-m1..m4), so its blob is no longer the `26a6d018` blob the hosted runs at `256fcb2` executed; it needs a new hosted `Run all` on its own blob before a human promotes it; see `docs/release-verification.md` and `STATUS.md`.
+**Candidate** — the tutorial notebook runs in an isolated hash-locked environment; its previous revision passed `Run all` in one pass on Google Colab and on a strict Kaggle T4 run, plus the REL12 BYOD journey, at `256fcb2`, but the notebook was regenerated for the 2026-10-02 review fixes (KGN-M1, KGN-m1..m4), so its blob is no longer the `26a6d018` blob the hosted runs at `256fcb2` executed. Its own blob passed the default path in one pass in a Colab CLI sequential execution on a fresh Colab T4 (2026-10-04); a browser `Run all` or strict Kaggle run and the BYOD and activity journeys on this blob remain before a human promotes it; see `docs/release-verification.md` and `STATUS.md`.
 
 ## Licensing
 
