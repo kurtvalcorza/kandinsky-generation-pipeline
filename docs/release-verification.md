@@ -140,7 +140,7 @@ execution on a fresh Colab Tesla T4 on 2026-10-04 (default path only); it stays 
 
 ## Current status
 
-**Candidate.** The review-fix revision (`d7c9ac2`, blob `6b261febb673`) passed its default path in one pass, with no
+**Candidate.** The current blob `59b2892041c2b631fa86795e672a8f70525dbc3f` (code commit `dd08232`) shows a refused BYOD input as one `Refused: <file>: <reason>` line with no traceback and removes the earlier run's results (NOTEBOOK_SPEC 3.0 DAT19/DAT20); its hosted Colab T4 runs (default path and a scripted refusal, `USE_BYOD=True;BYOD_PATH=/etc`) are pending, and the runs of blob `6b261feb` and earlier are history for it (REL14). The review-fix revision (`d7c9ac2`, blob `6b261febb673`) passed its default path in one pass, with no
 restart and 0 errors, in a Colab CLI sequential execution on a fresh Colab Tesla T4 (2026-10-04); that is not a
 browser `Run all`. Remaining before a human promotes it: a browser `Run all` or strict Kaggle run of this blob, and
 the BYOD and activity journeys on this blob. At `256fcb2` (notebook blob `26a6d01839ff`) the notebook runs every stage in an isolated hash-locked environment and installs nothing into the kernel. Its default `Run all` path passed in one pass on Google Colab (T4) and on a clean Kaggle T4 in strict single-pass mode, and its BYOD branch passed the REL12 journey (representative photographs accepted and carried through adaptation, evaluation, export and a fresh-process reload; two incompatible inputs refused with the validator's message). The earlier rows record the previous notebook, which needed a manual restart on hosted runtimes.
