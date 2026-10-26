@@ -1,0 +1,69 @@
+{
+  "repo": "kandinsky-generation-pipeline",
+  "sha": "133aca46c8554cf5bf086d8971c36d33dec03b7d",
+  "notebook": "tutorials/kandinsky_generation_colab.ipynb",
+  "blob": "59b2892041c2b631fa86795e672a8f70525dbc3f",
+  "gpu": "T4",
+  "session": "suite-kandinsky-133aca4-d413",
+  "started_utc": "2026-10-26T16:37:10+00:00",
+  "runner": "Colab CLI `colab exec -f` on a fresh session (not a browser Run all)",
+  "overrides": [
+    {
+      "name": "USE_BYOD",
+      "from": "False",
+      "to": "True"
+    },
+    {
+      "name": "BYOD_PATH",
+      "from": "''",
+      "to": "'/etc'"
+    }
+  ],
+  "run_copy_blob": "029dfb129d25accb0de1f82891d07daa457d1ffd",
+  "run_copy_sha256": "2750e4a2abf010b36fd652090f24813626316e8433fd9853c988c92334afd3a0",
+  "run_copy_note": "refusal run: the run copy is the committed notebook with the listed assignment overrides, cut immediately after the refusal cell and re-serialised (nbformat layout); input_unchanged compares against that copy",
+  "truncated_after_cell": "kandinsky_generation-18",
+  "refusal_cell_ref": "kandinsky_generation-18",
+  "refusal_cell_index": 5,
+  "cells_dropped": 21,
+  "code_cells_dropped": 6,
+  "original_sha256": "c11a73eb9175d2b238842c28b5fab4396fc8e9a7ca88618583501e8a8f213a84",
+  "status": "[suite-kandinsky-133aca4-d413] gpu-t4-s-usw4b0-5yv4y4dpu570 | Hardware: T4 | Shape: Standard | Variant: GPU | Status: IDLE",
+  "exec_exit_code": 0,
+  "stopped": true,
+  "stop_verified": true,
+  "wall_s": 465.3,
+  "input_unchanged": true,
+  "executed_file": "kandinsky_generation_colab_133aca4_colab-cli-t4_output.ipynb",
+  "log_cells": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "log_total": 5,
+  "code_cells": 5,
+  "executed_cells": 5,
+  "errors": [
+    {
+      "cell": "kandinsky_generation-18",
+      "ename": "Refused",
+      "evalue": "etc: captions.csv was not found in it. Fix the dataset (captions.csv with id, file, caption beside the images) and run the Section 4 cell again."
+    }
+  ],
+  "execution_counts": [],
+  "sequential": null,
+  "executed_sha256": "40a30983dc7f04364ded6ce9885ad35f167efbfebd7bb8215c1064c5ece69cb3",
+  "log_sequential_complete": true,
+  "mode": "expect_refusal",
+  "refusal_line": "Refused: etc: captions.csv was not found in it. Fix the dataset (captions.csv with id, file, caption beside the images) and run the Section 4 cell again.",
+  "halting_cell_index": 5,
+  "halting_cell_id": "kandinsky_generation-18",
+  "error_cells": [
+    5
+  ],
+  "refusal_fail_reasons": [],
+  "refusal_ok": true,
+  "verdict": "PASS"
+}

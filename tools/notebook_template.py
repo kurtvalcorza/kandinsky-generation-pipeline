@@ -372,10 +372,21 @@ TEMPLATE = {
                 'if USE_BYOD:\n'
                 '    if BYOD_PATH:\n'
                 '        byod_path = Path(BYOD_PATH)\n'
+                '        if not byod_path.exists():\n'
+                "            raise Refused(f'{{BYOD_PATH}}: BYOD_PATH is not a zip or folder in this runtime; fix the path, or leave it empty to upload in Colab, then run this cell again.')\n"
                 '    else:\n'
-                '        from google.colab import files\n'
+                '        try:\n'
+                '            from google.colab import files\n'
+                '        except ImportError:\n'
+                "            raise Refused('BYOD_PATH: is empty, and the upload dialog needs Google Colab. Elsewhere, put the zip in this runtime, set BYOD_PATH to its path and run this cell again.') from None\n"
                 '        uploaded = files.upload()\n'
+                '        if not uploaded:\n'
+                "            raise Refused('(no file): the upload was cancelled or empty. Run this cell again and choose one .zip file, or set BYOD_PATH.')\n"
+                '        if len(uploaded) != 1:\n'
+                "            raise Refused(f'{{\", \".join(sorted(uploaded))}}: upload exactly one .zip file, got {{len(uploaded)}}. Run this cell again and choose one file.')\n"
                 '        file_name, payload = next(iter(uploaded.items()))\n'
+                "        if not file_name.lower().endswith('.zip'):\n"
+                "            raise Refused(f'{{file_name}}: the upload must be one .zip holding captions.csv and the images. Run this cell again and choose a .zip file.')\n"
                 "        byod_path = ROOT / 'byod' / Path(file_name).name\n"
                 '        byod_path.parent.mkdir(parents=True, exist_ok=True)\n'
                 '        byod_path.write_bytes(payload)\n'
@@ -388,7 +399,7 @@ TEMPLATE = {
                 "**What to notice:** `data_source` names the sample, `disjoint` is `True`, and each refusal probe prints "
                 "`rejected` with a message that names the broken record and the rule it broke — the same messages you would "
                 "see for a bad BYOD record. With `USE_BYOD = True` the split sizes come from your own captions instead, and an "
-                "invalid zip stops this cell with a `RuntimeError` that repeats the validator's message.\n\n"
+                "invalid zip stops this cell with one `Refused: <file>: <reason>` line, with no traceback, that repeats the validator's message.\n\n"
                 "**Checkpoint:** why does the sample split draw 6 / 2 / 2 photographs *per species* instead of shuffling all 60 "
                 "together, and what would go wrong in Section 8 if it did not?\n\n"
                 "<details>\n<summary>Check your reasoning (open after answering)</summary>\n\n"
@@ -713,7 +724,7 @@ TEMPLATE = {
                 "| `CUDA out of memory` | a form field was raised (`BATCH_SIZE`, `IMAGES_PER_PROMPT`), or another program in "
                 "the runtime holds GPU memory | Set the fields back to their defaults and re-run that cell: each stage is its own "
                 "process, so the failed stage's memory was released when it stopped. |\n"
-                "| `ModuleNotFoundError: No module named 'google.colab'` with `USE_BYOD = True` | the upload dialog needs Google Colab | Set "
+                "| `Refused: BYOD_PATH: is empty, and the upload dialog needs Google Colab` with `USE_BYOD = True` | the upload dialog needs Google Colab | Set "
                 "`BYOD_PATH` to a zip already in the runtime, use Colab for the upload, or keep `USE_BYOD = False`. |\n"
                 "| `BYOD zip must contain captions.csv` or `captions.csv is missing columns [...]` | the zip layout differs from "
                 "the contract | Put `captions.csv` with the columns `id`, `file`, `caption` in the zip beside the images; "
